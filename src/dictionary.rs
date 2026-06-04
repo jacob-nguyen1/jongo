@@ -1,1 +1,0 @@
-// sqlite and jmdict stuff
