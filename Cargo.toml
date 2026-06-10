@@ -7,7 +7,7 @@ edition = "2024"
 lindera = { version = "3.0.7", features = ["embed-ipadic"] }
 phf = { version = "0.13.1", features = ["macros"] }
 wasm-bindgen = "0.2.123"
-web-sys = { version = "0.3.100", features = ["Window", "Document", "Element", "HtmlElement", "Node"] }
+web-sys = { version = "0.3.100", features = ["Window", "Document", "Element", "HtmlElement", "Node", "MouseEvent", "EventTarget", "Console"] }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
