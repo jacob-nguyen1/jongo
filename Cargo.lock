@@ -752,6 +752,8 @@ version = "0.1.0"
 dependencies = [
  "lindera",
  "phf",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
