@@ -1,21 +1,13 @@
 use jmdict::{entries, GlossLanguage};
 
 pub fn lookup(word: &str) -> Option<String> {
-    let entry = entries().find(|e| {
-        e.kanji_elements().any(|k| k.text == word)
-            || e.reading_elements().any(|r| r.text == word)
-    })?;
+    let entry = entries().find(|e| {e.kanji_elements().any(|k| k.text == word) || e.reading_elements().any(|r| r.text == word)})?;
 
     // get the kana reading
     let kana = entry.reading_elements().next()?.text;
 
     // collect all English glosses
-    let glosses: Vec<&str> = entry
-        .senses()
-        .flat_map(|s| s.glosses())
-        .filter(|g| g.language == GlossLanguage::English)
-        .map(|g| g.text)
-        .collect();
+    let glosses: Vec<&str> = entry.senses().flat_map(|s| s.glosses()).filter(|g| g.language == GlossLanguage::English).map(|g| g.text).collect();
 
     Some(format!("kana: {}\nenglish: {}", kana, glosses.join(", ")))
 }
