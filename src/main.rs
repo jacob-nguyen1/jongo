@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
@@ -38,6 +40,8 @@ struct Parser {
     tokenizer: Tokenizer,
 }
 
+static PARSER: LazyLock<Parser> = LazyLock::new(|| Parser::new().unwrap());
+
 impl Parser {
     fn new() -> LinderaResult<Self> {
         let dictionary = load_dictionary("embedded://ipadic")?;
@@ -46,30 +50,29 @@ impl Parser {
         Ok(Self { tokenizer })
     }
 
-    fn parse<'a>(&'a self, text: &'a str) -> LinderaResult<Vec<Token>> {
-        let mut tokens = self.tokenizer.tokenize(text)?;
-        let mut parsed: Vec<Token> = Vec::new();
-        for mut token in tokens {
+    fn parse(&self, text: &str) -> LinderaResult<Vec<Token>> {
+        let tokens = self.tokenizer.tokenize(text)?;
+        let parsed_tokens: Vec<Token> = tokens.into_iter().map(|mut token| {
             let surface = token.surface.to_string();
             let details = token.details();
-            parsed.push(Token {
+            println!("{:?}", details);
+            
+            Token {
                 surface: surface,
                 pos: *POS_MAP.get(details[0]).unwrap(),
-            });
-            println!("{:?}", details);
-        }
+            }
+        }).collect();
 
-        Ok(parsed)
+        Ok(parsed_tokens)
     }
 }
 
 
-fn main() -> LinderaResult<()> {
-    let parser = Parser::new().unwrap();
-    let result = parser.parse("私は食べる").unwrap();
-    for i in 0..result.len() {
-        println!("{:?}", result[i].pos);
-    }
+fn main() {
+    let result = PARSER.parse("私は食べる").unwrap();
 
-    Ok(())
+    result.iter().for_each(|t| {
+        println!("{:?}", t.pos);
+    });
+
 }
