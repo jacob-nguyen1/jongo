@@ -29,9 +29,6 @@ enum PartOfSpeechSubcategory1 {
     Particle,
 }
 
-static POS_SUB1: phf::Map<&'static str, '
-
-
 struct Token {
     surface: String,
     pos: PartOfSpeech,
