@@ -5,6 +5,7 @@ use lindera::tokenizer::Tokenizer;
 use lindera::LinderaResult;
 
 mod jmdict;
+use jmdict::lookup;
 
 use phf::phf_map;
 
