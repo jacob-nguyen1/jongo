@@ -4,6 +4,8 @@ use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
 use lindera::LinderaResult;
 
+mod jmdict;
+
 use phf::phf_map;
 
 #[derive(Debug, Clone, Copy)]
