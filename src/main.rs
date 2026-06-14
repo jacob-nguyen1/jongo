@@ -78,7 +78,7 @@ enum PartOfSpeechSubcategory1 {
     Void,
     Comma,
     Interjection,
-    Star,
+    X,
 }
 
 static POS_SUB1_MAP: phf::Map<&'static str, PartOfSpeechSubcategory1> = phf_map! {
@@ -117,7 +117,7 @@ static POS_SUB1_MAP: phf::Map<&'static str, PartOfSpeechSubcategory1> = phf_map!
     "空白" => PartOfSpeechSubcategory1::Void,
     "読点" => PartOfSpeechSubcategory1::Comma,
     "間投" => PartOfSpeechSubcategory1::Interjection,
-    "*" => PartOfSpeechSubcategory1::Star,
+    "*" => PartOfSpeechSubcategory1::X,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -135,7 +135,7 @@ enum PartOfSpeechSubcategory2 {
     Contraction,
     Quotation,
     Collocation,
-    Star,
+    X,
 }
 
 static POS_SUB2_MAP: phf::Map<&'static str, PartOfSpeechSubcategory2> = phf_map! {
@@ -152,7 +152,7 @@ static POS_SUB2_MAP: phf::Map<&'static str, PartOfSpeechSubcategory2> = phf_map!
     "縮約" => PartOfSpeechSubcategory2::Contraction,
     "引用" => PartOfSpeechSubcategory2::Quotation,
     "連語" => PartOfSpeechSubcategory2::Collocation,
-    "*" => PartOfSpeechSubcategory2::Star,
+    "*" => PartOfSpeechSubcategory2::X,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -161,7 +161,7 @@ enum PartOfSpeechSubcategory3 {
     Surname,
     Name,
     Country,
-    Star,
+    X,
 }
 
 static POS_SUB3_MAP: phf::Map<&'static str, PartOfSpeechSubcategory3> = phf_map! {
@@ -169,7 +169,7 @@ static POS_SUB3_MAP: phf::Map<&'static str, PartOfSpeechSubcategory3> = phf_map!
     "姓" => PartOfSpeechSubcategory3::Surname,
     "名" => PartOfSpeechSubcategory3::Name,
     "国" => PartOfSpeechSubcategory3::Country,
-    "*" => PartOfSpeechSubcategory3::Star,
+    "*" => PartOfSpeechSubcategory3::X,
 };
 
 struct Token {
@@ -204,6 +204,9 @@ impl Parser {
             Token {
                 surface: surface,
                 pos: *POS_MAP.get(details[0]).unwrap(),
+                sub1: *POS_SUB1_MAP.get(details[1]).unwrap(),
+                sub2: *POS_SUB2_MAP.get(details[2]).unwrap(),
+                sub3: *POS_SUB3_MAP.get(details[3]).unwrap(),
             }
         }).collect();
 
@@ -213,10 +216,10 @@ impl Parser {
 
 
 fn main() {
-    let result = PARSER.parse("私は食べる").unwrap();
+    let result = PARSER.parse("私は明日使ったご飯を食べています").unwrap();
 
     result.iter().for_each(|t| {
-        println!("{:?}", t.pos);
+        println!("{}, {:?}, {:?}, {:?}, {:?}", t.surface, t.pos, t.sub1, t.sub2, t.sub3);
     });
 
 }
