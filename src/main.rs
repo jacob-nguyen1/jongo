@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
@@ -182,6 +184,8 @@ struct Parser {
     tokenizer: Tokenizer,
 }
 
+static PARSER: LazyLock<Parser> = LazyLock::new(|| Parser::new().unwrap());
+
 impl Parser {
     fn new() -> LinderaResult<Self> {
         let dictionary = load_dictionary("embedded://ipadic")?;
@@ -190,36 +194,29 @@ impl Parser {
         Ok(Self { tokenizer })
     }
 
-    fn parse<'a>(&'a self, text: &'a str) -> LinderaResult<Vec<Token>> {
-        let mut tokens = self.tokenizer.tokenize(text)?;
-        let mut parsed: Vec<Token> = Vec::new();
-        for mut token in tokens {
+    fn parse(&self, text: &str) -> LinderaResult<Vec<Token>> {
+        let tokens = self.tokenizer.tokenize(text)?;
+        let parsed_tokens: Vec<Token> = tokens.into_iter().map(|mut token| {
             let surface = token.surface.to_string();
             let details = token.details();
-            parsed.push(Token {
+            println!("{:?}", details);
+            
+            Token {
                 surface: surface,
                 pos: *POS_MAP.get(details[0]).unwrap(),
-                sub1: *POS_SUB1_MAP.get(details[1]).unwrap(),
-                sub2: *POS_SUB2_MAP.get(details[2]).unwrap(),
-                sub3: *POS_SUB3_MAP.get(details[3]).unwrap(),
-            });
-            println!("{:?}", details);
-        }
+            }
+        }).collect();
 
-        Ok(parsed)
+        Ok(parsed_tokens)
     }
 }
 
 
-fn main() -> LinderaResult<()> {
-    let parser = Parser::new().unwrap();
-    let result = parser.parse("私は明日作った料理を食べています").unwrap();
-    for i in 0..result.len() {
-        print!("{:?}, ", result[i].pos);
-        print!("{:?}, ", result[i].sub1);
-        print!("{:?}, ", result[i].sub2);
-        print!("{:?}\n", result[i].sub3);
-    }
+fn main() {
+    let result = PARSER.parse("私は食べる").unwrap();
 
-    Ok(())
+    result.iter().for_each(|t| {
+        println!("{:?}", t.pos);
+    });
+
 }
