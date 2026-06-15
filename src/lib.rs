@@ -37,37 +37,57 @@ impl JongoController {
         let Some(caret) = document.caret_position_from_point(self.mouse_x, self.mouse_y) else { return; };
         let Some(node) = caret.offset_node() else { return; };
         let offset = caret.offset();
-        let text = node.text_content().unwrap_or_default();
-        let Some(character) = text.chars().nth(offset as usize) else { return; };
         let Ok(range) = document.create_range() else { return; };
 
-        let mut sentence_start = offset;
-        let mut sentence_end = offset+1;
-        let text_vec: Vec<u16> = text.encode_utf16().collect();
-        for i in (0..offset+1).rev() {
-            if [' ' as u16, '.' as u16].contains(&text_vec[i as usize]) {
+        if range.set_start(&node, offset).is_err() { return; }
+        if range.set_end(&node, offset + 1).is_err() { return; }
+        let rect = range.get_bounding_client_rect();
+        if self.mouse_x < rect.left() as f32 || self.mouse_x > rect.right() as f32
+            || self.mouse_y < rect.top() as f32 || self.mouse_y > rect.bottom() as f32 {
+            return;
+        }
+
+        let Some(block) = find_block_ancestor(&node) else { return; };
+
+        let mut text_nodes = Vec::new();
+        let mut absolute_offset = 0;
+        let mut found_target = false;
+        collect_text_nodes(&block, &node, &mut text_nodes, &mut absolute_offset, offset as usize, &mut found_target);
+
+        let block_text = block.text_content().unwrap_or_default();
+        let text_vec: Vec<u16> = block_text.encode_utf16().collect();
+
+        let mut sentence_start = absolute_offset;
+        for i in (0..=absolute_offset).rev() {
+            if [' ' as u16, '.' as u16, '。' as u16, '\n' as u16].contains(&text_vec[i]) {
                 break;
             }
             sentence_start = i;
         }
-        for i in (offset..(text_vec.len() as u32)) {
-            if [' ' as u16, '.' as u16].contains(&text_vec[i as usize]) {
+
+        let mut sentence_end = absolute_offset;
+        for i in absolute_offset..text_vec.len() {
+            if [' ' as u16, '.' as u16, '。' as u16, '\n' as u16].contains(&text_vec[i]) {
                 break;
             }
-            sentence_end = i;
+            sentence_end = i + 1;
         }
-        if range.set_start(&node, sentence_start).is_err() { return; }
-        if range.set_end(&node, sentence_end).is_err() { return; }
-        let rect = range.get_bounding_client_rect();
-        if self.mouse_x >= rect.left() as f32 && self.mouse_x <= rect.right() as f32
-        && self.mouse_y >= rect.top() as f32 && self.mouse_y <= rect.bottom() as f32 {
-            console::log_1(&format!("{}", character).into());
-            let selection = window.get_selection().unwrap().unwrap();
-            selection.remove_all_ranges();
-            selection.add_range(&range);
-        }
+
+        let Some((start_node, start_offset)) = map_offset_to_node(&text_nodes, sentence_start) else { return; };
+        let Some((end_node, end_offset)) = map_offset_to_node(&text_nodes, sentence_end) else { return; };
+
+        if range.set_start(&start_node, start_offset as u32).is_err() { return; }
+        if range.set_end(&end_node, end_offset as u32).is_err() { return; }
+
+        let selection = window.get_selection().unwrap().unwrap();
+        let _ = selection.remove_all_ranges();
+        let _ = selection.add_range(&range);
+
+        let sentence_str = String::from_utf16(&text_vec[sentence_start..sentence_end]).unwrap_or_default();
+        console::log_1(&format!("Sentence: {}", sentence_str).into());
     }
 }
+
 
 #[wasm_bindgen]
 pub fn content_start() {
@@ -96,4 +116,59 @@ pub fn content_start() {
         .add_event_listener_with_callback("keydown", key_cb.as_ref().unchecked_ref())
         .unwrap();
     key_cb.forget();
+}
+
+fn find_block_ancestor(start_node: &web_sys::Node) -> Option<web_sys::Element> {
+    let mut current = start_node.clone();
+    
+    loop {
+        let parent = current.parent_node()?;
+        
+        if let Some(element) = parent.dyn_ref::<web_sys::Element>() {
+            let tag = element.tag_name();
+            
+            if matches!(tag.as_str(), "P" | "DIV" | "LI" | "TD" | "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "SECTION" | "ARTICLE") {
+                return Some(element.clone());
+            }
+        }
+        
+        current = parent;
+    }
+}
+
+fn collect_text_nodes(
+    node: &web_sys::Node,
+    target_node: &web_sys::Node,
+    text_nodes: &mut Vec<web_sys::Node>,
+    absolute_offset: &mut usize,
+    local_offset: usize,
+    found_target: &mut bool,
+) {
+    if node.node_type() == web_sys::Node::TEXT_NODE {
+        if node == target_node {
+            *absolute_offset += local_offset;
+            *found_target = true;
+        } else if !*found_target {
+            *absolute_offset += node.text_content().unwrap_or_default().encode_utf16().count();
+        }
+        text_nodes.push(node.clone());
+    } else {
+        let children = node.child_nodes();
+        for i in 0..children.length() {
+            if let Some(child) = children.item(i) {
+                collect_text_nodes(&child, target_node, text_nodes, absolute_offset, local_offset, found_target);
+            }
+        }
+    }
+}
+
+fn map_offset_to_node(text_nodes: &[web_sys::Node], mut target_offset: usize) -> Option<(web_sys::Node, usize)> {
+    for node in text_nodes {
+        let len = node.text_content().unwrap_or_default().encode_utf16().count();
+        if target_offset <= len {
+            return Some((node.clone(), target_offset));
+        }
+        target_offset -= len;
+    }
+    None
 }
