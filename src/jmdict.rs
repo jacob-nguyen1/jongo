@@ -18,7 +18,6 @@ pub fn lookup(word: &str) -> Option<(&str, Vec<&str>)> {
     Some((kana, glosses)) 
 }
 
-
 pub fn debug_word(word: &str) {
     let matches: Vec<_> = jmdict::entries().filter(|e| {
         e.kanji_elements().any(|k| k.text == word)
@@ -59,5 +58,4 @@ mod tests {
         debug_word("は");
         debug_word("に");
     }
-
 }
