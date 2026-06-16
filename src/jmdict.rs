@@ -1,15 +1,15 @@
 use jmdict::{entries, GlossLanguage, PartOfSpeech, Enum};
 
-pub fn lookup(word: &str) -> Option<(&str, Vec<&str>)> {
+pub fn lookup(word: &str) -> Option<(String, Vec<String>)> {
     // finds target string
     let entry = entries().find(|e|
          {e.kanji_elements().any(|k| k.text == word) || e.reading_elements().any(|r| r.text == word)})?;
 
     // get the kana reading
-    let kana = entry.reading_elements().next()?.text;
+    let kana = entry.reading_elements().next()?.text.to_string();
 
     // get all English glosses (definitions)
-    let glosses: Vec<&str> = entry.senses().flat_map(|s| s.glosses()).filter(|g| g.language == GlossLanguage::English).map(|g| g.text).collect();
+    let glosses: Vec<String> = entry.senses().flat_map(|s| s.glosses()).filter(|g| g.language == GlossLanguage::English).map(|g| g.text.to_string()).collect();
     for sense in entry.senses() {
         for pos in sense.parts_of_speech() {
             println!("{}", pos);
