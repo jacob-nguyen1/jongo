@@ -3,6 +3,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::console;
 
+const SENTENCE_DELIMITERS: [u16; 4] = ['.' as u16, '。' as u16, '\n' as u16, '…' as u16];
+
 thread_local! {
     static CONTROLLER: RefCell<JongoController> = RefCell::new(JongoController::new());
 }
@@ -15,20 +17,6 @@ struct JongoController {
 impl JongoController {
     fn new() -> Self {
         Self { mouse_x: 0.0, mouse_y: 0.0 }
-    }
-
-    fn on_mousemove(&mut self, x: i32, y: i32, shift_held: bool) {
-        self.mouse_x = x as f32;
-        self.mouse_y = y as f32;
-        if shift_held {
-            self.analyze();
-        }
-    }
-
-    fn on_keydown(&self, key: &str) {
-        if key == "Shift" {
-            self.analyze();
-        }
     }
 
     fn analyze(&self) {
@@ -56,10 +44,12 @@ impl JongoController {
 
         let block_text = block.text_content().unwrap_or_default();
         let text_vec: Vec<u16> = block_text.encode_utf16().collect();
+        if absolute_offset >= text_vec.len() { return; }
+
 
         let mut sentence_start = absolute_offset;
         for i in (0..=absolute_offset).rev() {
-            if [' ' as u16, '.' as u16, '。' as u16, '\n' as u16].contains(&text_vec[i]) {
+            if SENTENCE_DELIMITERS.contains(&text_vec[i]) {
                 break;
             }
             sentence_start = i;
@@ -67,10 +57,10 @@ impl JongoController {
 
         let mut sentence_end = absolute_offset;
         for i in absolute_offset..text_vec.len() {
-            if [' ' as u16, '.' as u16, '。' as u16, '\n' as u16].contains(&text_vec[i]) {
+            sentence_end = i + 1;
+            if SENTENCE_DELIMITERS.contains(&text_vec[i]) {
                 break;
             }
-            sentence_end = i + 1;
         }
 
         let Some((start_node, start_offset)) = map_offset_to_node(&text_nodes, sentence_start) else { return; };
@@ -96,9 +86,19 @@ pub fn content_start() {
     let window = web_sys::window().unwrap();
 
     let mouse_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+        let shift_held = e.shift_key();
         CONTROLLER.with(|c| {
-            c.borrow_mut().on_mousemove(e.client_x(), e.client_y(), e.shift_key());
+            let Ok(mut ctrl) = c.try_borrow_mut() else { return; };
+            ctrl.mouse_x = e.client_x() as f32;
+            ctrl.mouse_y = e.client_y() as f32;
         });
+        if shift_held {
+            CONTROLLER.with(|c| {
+                if let Ok(ctrl) = c.try_borrow() {
+                    ctrl.analyze();
+                }
+            });
+        }
     });
     window
         .add_event_listener_with_callback("mousemove", mouse_cb.as_ref().unchecked_ref())
@@ -108,7 +108,9 @@ pub fn content_start() {
     let key_cb = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|e: web_sys::KeyboardEvent| {
         if e.key() == "Shift" {
             CONTROLLER.with(|c| {
-                c.borrow().on_keydown("Shift");
+                if let Ok(ctrl) = c.try_borrow() {
+                    ctrl.analyze();
+                }
             });
         }
     });
