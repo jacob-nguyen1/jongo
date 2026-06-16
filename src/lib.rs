@@ -1,3 +1,5 @@
+pub mod grammar;
+
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -75,6 +77,9 @@ impl JongoController {
 
         let sentence_str = String::from_utf16(&text_vec[sentence_start..sentence_end]).unwrap_or_default();
         console::log_1(&format!("Sentence: {}", sentence_str).into());
+
+        let tokens = grammar::PARSER.parse(&sentence_str).unwrap();
+        tokens.iter().for_each(|x| console::log_1(&format!("{} {:?}", x.surface, x.pos).into()));
     }
 }
 

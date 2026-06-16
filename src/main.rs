@@ -14,6 +14,7 @@ enum PartOfSpeech {
     Verb,
     AuxiliaryVerb,
     Particle,
+    Unknown,
 }
 
 static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
@@ -59,7 +60,7 @@ impl Parser {
             
             Token {
                 surface: surface,
-                pos: *POS_MAP.get(details[0]).unwrap(),
+                pos: *POS_MAP.get(details[0]).unwrap_or(&PartOfSpeech::Unknown),
             }
         }).collect();
 
@@ -69,7 +70,7 @@ impl Parser {
 
 
 fn main() {
-    let result = PARSER.parse("私は食べる").unwrap();
+    let result = PARSER.parse("元々は2010年にバンドのシングル「アイデンティティ」のカップリング曲（B面）としてリリースされ、その後リミックスされてバンドの5枚目のアルバム『DocumentaLy』にボーナス・トラックとして収録された。").unwrap();
 
     result.iter().for_each(|t| {
         println!("{:?}", t.pos);
