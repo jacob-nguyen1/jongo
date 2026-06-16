@@ -59,7 +59,7 @@ impl Parser {
                 surface: surface,
                 pos: *POS_MAP.get(details[0]).unwrap(),
             });
-            println!("{:?}", details);
+            println!("{:?}", details); // prints lindera token in vector format
         }
 
         Ok(parsed)
@@ -71,7 +71,7 @@ fn main() -> LinderaResult<()> {
     let parser = Parser::new().unwrap();
     let result = parser.parse("私は食べる").unwrap();
     for i in 0..result.len() {
-        println!("{:?}", result[i].pos);
+        println!("{:?}", result[i].pos); // prints part of speech
     }
 
     Ok(())
