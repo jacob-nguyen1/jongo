@@ -87,10 +87,10 @@ impl Parser {
 
 
 fn main() {
-    let result = PARSER.parse("私は食べる").unwrap();
+    let result = PARSER.parse("公園で遊んでいた子どもたちが、急に降り始めた雨を見て、近くの店まで走って行った。").unwrap();
 
     result.iter().for_each(|t| {
-        println!("{:?}", t.pos);
+        println!("{} {:?}",t.surface, t.pos);
     });
 
 }
