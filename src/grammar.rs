@@ -177,6 +177,13 @@ static POS_SUB3_MAP: phf::Map<&'static str, PartOfSpeechSubcategory3> = phf_map!
     "*" => PartOfSpeechSubcategory3::X,
 };
 
+enum Tenses {
+    Past,
+    NonPast,
+    PresentContinuous,
+    PastContinuous,
+}
+
 struct Token {
     surface: String,
     pos: PartOfSpeech,
@@ -190,7 +197,7 @@ struct Token {
 struct Filtered{
     full: String,
     base: String,
-    pos: String,
+    pos: PartOfSpeech,
     tense: String,
 }
 
@@ -216,7 +223,7 @@ fn filter(line: &[Token]) -> Vec<Filtered> {
         filtered_tokens.push(Filtered{
             full: conj,
             base: base,
-            pos: format!("{:?}", pos),
+            pos: pos,
             tense: String::from("wip"),
         });
         i+=1;
@@ -322,7 +329,7 @@ pub fn grammar() {
             "3" => {
                 let filtered = filter(&result);
                 filtered.iter().for_each(|f| {
-                    println!("Full: {}, Base: {}, POS: {}, Tense: {}", f.full, f.base, f.pos, f.tense);
+                    println!("Full: {}, Base: {}, POS: {:?}, Tense: {}", f.full, f.base, f.pos, f.tense);
                 });
             },
             "4" => {
