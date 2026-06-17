@@ -1,24 +1,38 @@
 use jmdict::{entries, GlossLanguage, PartOfSpeech, Enum};
 
-pub fn lookup(word: &str) -> Option<(String, Vec<String>)> {
-    // finds target string
-    let entry = entries().find(|e|
-         {e.kanji_elements().any(|k| k.text == word) || e.reading_elements().any(|r| r.text == word)})?;
 
-    // get the kana reading
-    let kana = entry.reading_elements().next()?.text.to_string();
+pub fn lookup(word: &str, pos: crate::PartOfSpeech) -> Option<(String, Vec<String>)> {
+    for entry in jmdict::entries() {
+        // if the word matches kanji or reading
+        if entry.kanji_elements().any(|k| k.text == word) || entry.reading_elements().any(|r| r.text == word) {
+            // find senses that match the requested part of speech
+            let matching_senses: Vec<_> = entry.senses().filter(|sense| {
+                let jm_pos: Vec<_> = sense.parts_of_speech().collect();
+                if jm_pos.is_empty() {
+                    true // if no POS is explicitly defined for this sense, assume it inherits and might match
+                } else {
+                    jm_pos.iter().any(|p| pos.matches_jmdict(p))
+                }
+            }).collect();
 
-    // get all English glosses (definitions)
-    let glosses: Vec<String> = entry.senses().flat_map(|s| s.glosses()).filter(|g| g.language == GlossLanguage::English).map(|g| g.text.to_string()).collect();
-    for sense in entry.senses() {
-        for pos in sense.parts_of_speech() {
-            println!("{}", pos);
+            // if we found any matching senses, return them!
+            if !matching_senses.is_empty() {
+                let kana = entry.reading_elements().next()?.text.to_string();
+                let glosses: Vec<String> = matching_senses.into_iter()
+                    .flat_map(|s| s.glosses())
+                    .filter(|g| g.language == jmdict::GlossLanguage::English)
+                    .map(|g| g.text.to_string())
+                    .collect();
+                return Some((kana, glosses));
+            }
         }
     }
-    Some((kana, glosses)) 
+    None
 }
 
+
 pub fn debug_word(word: &str) {
+    // finds all jmdict data for a specific word
     let matches: Vec<_> = jmdict::entries().filter(|e| {
         e.kanji_elements().any(|k| k.text == word)
             || e.reading_elements().any(|r| r.text == word)
@@ -47,7 +61,7 @@ mod tests {
     #[test]
     fn test_okaasan() {
         let word = "葉"; // 私は食べる
-        let result = lookup(word).unwrap();
+        let result = lookup(word, crate::PartOfSpeech::Noun).unwrap();
         println!("original word: {}\nkana: {}\nenglish: {:?}", word, result.0, result.1);
         // assert!(result.0.contains("おかあさん"));
         // assert!(result.1.contains(&"mother"));
