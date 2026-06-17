@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 use std::sync::LazyLock;
 
 use lindera::dictionary::load_dictionary;
@@ -93,4 +94,10 @@ fn main() {
         println!("{} {:?}",t.surface, t.pos);
     });
 
+=======
+
+mod grammar;
+fn main() {
+    grammar::grammar();
+>>>>>>> Stashed changes
 }

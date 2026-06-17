@@ -14,14 +14,18 @@ thread_local! {
 struct JongoController {
     mouse_x: f32,
     mouse_y: f32,
+    prompt: Option<web_sys::HtmlElement>,
 }
 
 impl JongoController {
     fn new() -> Self {
-        Self { mouse_x: 0.0, mouse_y: 0.0 }
+        Self { mouse_x: 0.0, mouse_y: 0.0, prompt: None }
     }
 
-    fn analyze(&self) {
+    fn prompt(&mut self) {
+        if let Some(old) = self.prompt.take() {
+            old.remove();
+        }
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
         let Some(caret) = document.caret_position_from_point(self.mouse_x, self.mouse_y) else { return; };
@@ -78,8 +82,30 @@ impl JongoController {
         let sentence_str = String::from_utf16(&text_vec[sentence_start..sentence_end]).unwrap_or_default();
         console::log_1(&format!("Sentence: {}", sentence_str).into());
 
+<<<<<<< Updated upstream
         let tokens = grammar::PARSER.parse(&sentence_str).unwrap();
         tokens.iter().for_each(|x| console::log_1(&format!("{} {:?}", x.surface, x.pos).into()));
+=======
+        // spawn element
+        let prompt = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
+
+        prompt.style().set_property("position", "fixed").unwrap();
+        prompt.style().set_property("top", &format!("{}px", rect.bottom())).unwrap();
+        prompt.style().set_property("left", &format!("{}px", rect.left())).unwrap();
+        prompt.style().set_property("background", "white").unwrap();
+        prompt.style().set_property("border", "1px solid black").unwrap();
+        prompt.style().set_property("padding", "10px").unwrap();
+        prompt.style().set_property("z-index", "9999").unwrap();
+        prompt.style().set_property("color", "black").unwrap();
+
+        prompt.set_inner_html(&format!("<p>{}</p>", sentence_str));
+
+        document.body().unwrap().append_child(&prompt).unwrap();
+        self.prompt = Some(prompt);
+    }
+
+    fn analyze(&mut self) {
+>>>>>>> Stashed changes
     }
 }
 
@@ -99,8 +125,8 @@ pub fn content_start() {
         });
         if shift_held {
             CONTROLLER.with(|c| {
-                if let Ok(ctrl) = c.try_borrow() {
-                    ctrl.analyze();
+                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    ctrl.prompt();
                 }
             });
         }
@@ -113,8 +139,8 @@ pub fn content_start() {
     let key_cb = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|e: web_sys::KeyboardEvent| {
         if e.key() == "Shift" {
             CONTROLLER.with(|c| {
-                if let Ok(ctrl) = c.try_borrow() {
-                    ctrl.analyze();
+                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    ctrl.prompt();
                 }
             });
         }
