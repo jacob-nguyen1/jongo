@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Jongo",
+  "version": "1.0.0",
+  "description": "Jongo",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_shim.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["pkg/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}
