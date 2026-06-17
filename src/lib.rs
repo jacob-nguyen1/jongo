@@ -23,9 +23,6 @@ impl JongoController {
     }
 
     fn prompt(&mut self) {
-        if let Some(old) = self.prompt.take() {
-            old.remove();
-        }
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
         let Some(caret) = document.caret_position_from_point(self.mouse_x, self.mouse_y) else { return; };
@@ -82,10 +79,6 @@ impl JongoController {
         let sentence_str = String::from_utf16(&text_vec[sentence_start..sentence_end]).unwrap_or_default();
         console::log_1(&format!("Sentence: {}", sentence_str).into());
 
-<<<<<<< Updated upstream
-        let tokens = grammar::PARSER.parse(&sentence_str).unwrap();
-        tokens.iter().for_each(|x| console::log_1(&format!("{} {:?}", x.surface, x.pos).into()));
-=======
         // spawn element
         let prompt = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
 
@@ -98,14 +91,36 @@ impl JongoController {
         prompt.style().set_property("z-index", "9999").unwrap();
         prompt.style().set_property("color", "black").unwrap();
 
-        prompt.set_inner_html(&format!("<p>{}</p>", sentence_str));
+        prompt.set_inner_html("
+            <button id='jong-btn'>jong</button>
+        ");
+
+        // delete the old prompt
+        if let Some(old) = self.prompt.take() {
+            old.remove();
+        }
 
         document.body().unwrap().append_child(&prompt).unwrap();
+
+        let btn = document.get_element_by_id("jong-btn").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
+
+        let cb = Closure::<dyn FnMut()>::new(|| {
+            CONTROLLER.with(|c| {
+                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    if let Some(old) = ctrl.prompt.take() {
+                        old.remove();
+                    }
+                }
+            });
+        });
+
+        btn.add_event_listener_with_callback("click", cb.as_ref().unchecked_ref()).unwrap();
+        cb.forget();
+
         self.prompt = Some(prompt);
     }
 
     fn analyze(&mut self) {
->>>>>>> Stashed changes
     }
 }
 
@@ -117,13 +132,12 @@ pub fn content_start() {
     let window = web_sys::window().unwrap();
 
     let mouse_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
-        let shift_held = e.shift_key();
         CONTROLLER.with(|c| {
             let Ok(mut ctrl) = c.try_borrow_mut() else { return; };
             ctrl.mouse_x = e.client_x() as f32;
             ctrl.mouse_y = e.client_y() as f32;
         });
-        if shift_held {
+        if e.shift_key() {
             CONTROLLER.with(|c| {
                 if let Ok(mut ctrl) = c.try_borrow_mut() {
                     ctrl.prompt();
