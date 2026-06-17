@@ -70,10 +70,10 @@ impl Parser {
 
 
 fn main() {
-    let result = PARSER.parse("元々は2010年にバンドのシングル「アイデンティティ」のカップリング曲（B面）としてリリースされ、その後リミックスされてバンドの5枚目のアルバム『DocumentaLy』にボーナス・トラックとして収録された。").unwrap();
+    let result = PARSER.parse("公園で遊んでいた子どもたちが、急に降り始めた雨を見て、近くの店まで走って行った。").unwrap();
 
     result.iter().for_each(|t| {
-        println!("{:?}", t.pos);
+        println!("{} {:?}",t.surface, t.pos);
     });
 
 }
