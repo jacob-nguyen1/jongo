@@ -1,11 +1,11 @@
-use std::string;
-use std::sync::LazyLock;
+use lindera::LinderaResult;
 use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
-use lindera::LinderaResult;
 use phf::phf_map;
+use std::string;
+use std::sync::LazyLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PartOfSpeech {
@@ -177,13 +177,6 @@ static POS_SUB3_MAP: phf::Map<&'static str, PartOfSpeechSubcategory3> = phf_map!
     "*" => PartOfSpeechSubcategory3::X,
 };
 
-enum Tenses {
-    Past,
-    NonPast,
-    PresentContinuous,
-    PastContinuous,
-}
-
 struct Token {
     surface: String,
     pos: PartOfSpeech,
@@ -193,25 +186,59 @@ struct Token {
     detail: Vec<String>,
     base: String,
 }
+enum ProcTokens {
+    Verb(ProcVerbToken),
+}
 
-struct Filtered{
+trait ProcToken<'a> {
+    fn full(&self) -> &str;
+    fn base(&self) -> &str;
+    fn pos(&self) -> &str;
+}
+
+struct ProcVerbToken {
     full: String,
     base: String,
-    pos: PartOfSpeech,
+    pos: String,
     tense: String,
 }
 
-fn filter(line: &[Token]) -> Vec<Filtered> {
-    let mut filtered_tokens: Vec<Filtered> = Vec::new();
+impl ProcToken<'_> for ProcVerbToken {
+    fn full(&self) -> &str {
+        &self.full
+    }
+
+    fn base(&self) -> &str {
+        &self.base
+    }
+
+    fn pos(&self) -> &str {
+        &self.pos
+    }
+}
+
+impl ProcVerbToken {
+    fn tense(&self) -> &str {
+        &self.tense
+    }
+}
+
+fn filter(line: &[Token]) -> Vec<ProcVerbToken> {
+    let mut filtered_tokens: Vec<ProcVerbToken> = Vec::new();
     let mut i = 0;
     while i < line.len() {
-        let token = &line[i];
-        let pos=token.pos.clone();
-        let base=token.base.clone();
-        let mut conj=token.surface.clone();
-        if token.surface != token.base && (token.surface!="な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
-            i+=1;
-            while i < line.len() && line[i].pos != PartOfSpeech::Symbol && line[i].sub1 != PartOfSpeechSubcategory1::Unbound {
+        let token = line.get(i).unwrap();
+        let pos = token.pos.clone();
+        let base = token.base.clone();
+        let mut conj = token.surface.clone();
+        if token.surface != token.base
+            && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb)
+        {
+            i += 1;
+            while i < line.len()
+                && line[i].pos != PartOfSpeech::Symbol
+                && line[i].sub1 != PartOfSpeechSubcategory1::Unbound
+            {
                 conj = conj + &line[i].surface;
                 if i + 1 < line.len() {
                     i += 1;
@@ -220,13 +247,13 @@ fn filter(line: &[Token]) -> Vec<Filtered> {
                 }
             }
         }
-        filtered_tokens.push(Filtered{
+        filtered_tokens.push(ProcVerbToken {
             full: conj,
-            base: base,
-            pos: pos,
+            base,
+            pos: format!("{:?}", pos),
             tense: String::from("wip"),
         });
-        i+=1;
+        i += 1;
     }
     filtered_tokens
 }
@@ -246,50 +273,57 @@ impl Parser {
 
     fn parse(&self, text: &str) -> LinderaResult<Vec<Token>> {
         let tokens = self.tokenizer.tokenize(text)?;
-        let parsed_tokens: Vec<Token> = tokens.into_iter().map(|mut token| {
-            let surface = token.surface.to_string();
-            let details = token.details();
-            let detail: Vec<String> = details.iter().map(|s| (*s).to_string()).collect();
-            
-            let pos = details.get(0)
-                .and_then(|k| POS_MAP.get(*k))
-                .copied()
-                .unwrap_or(PartOfSpeech::ERR);
+        let parsed_tokens: Vec<Token> = tokens
+            .into_iter()
+            .map(|mut token| {
+                let surface = token.surface.to_string();
+                let details = token.details();
+                let detail: Vec<String> = details.iter().map(|s| (*s).to_string()).collect();
 
-            let sub1 = details.get(1)
-                .and_then(|k| POS_SUB1_MAP.get(*k))
-                .copied()
-                .unwrap_or(PartOfSpeechSubcategory1::ERR);
+                let pos = details
+                    .get(0)
+                    .and_then(|k| POS_MAP.get(*k))
+                    .copied()
+                    .unwrap_or(PartOfSpeech::ERR);
 
-            let sub2 = details.get(2)
-                .and_then(|k| POS_SUB2_MAP.get(*k))
-                .copied()
-                .unwrap_or(PartOfSpeechSubcategory2::ERR);
+                let sub1 = details
+                    .get(1)
+                    .and_then(|k| POS_SUB1_MAP.get(*k))
+                    .copied()
+                    .unwrap_or(PartOfSpeechSubcategory1::ERR);
 
-            let sub3 = details.get(3)
-                .and_then(|k| POS_SUB3_MAP.get(*k))
-                .copied()
-                .unwrap_or(PartOfSpeechSubcategory3::ERR);
+                let sub2 = details
+                    .get(2)
+                    .and_then(|k| POS_SUB2_MAP.get(*k))
+                    .copied()
+                    .unwrap_or(PartOfSpeechSubcategory2::ERR);
 
-            let base = details.get(6)
-                .map(|s| (*s).to_string())
-                .unwrap_or(surface.clone());
+                let sub3 = details
+                    .get(3)
+                    .and_then(|k| POS_SUB3_MAP.get(*k))
+                    .copied()
+                    .unwrap_or(PartOfSpeechSubcategory3::ERR);
 
-            Token {
-                surface: surface,
-                pos: pos,
-                sub1: sub1,
-                sub2: sub2,
-                sub3: sub3,
-                detail: detail,
-                base: base,
-            }
-        }).collect();
+                let base = details
+                    .get(6)
+                    .map(|s| (*s).to_string())
+                    .unwrap_or(surface.clone());
+
+                Token {
+                    surface: surface,
+                    pos: pos,
+                    sub1: sub1,
+                    sub2: sub2,
+                    sub3: sub3,
+                    detail: detail,
+                    base: base,
+                }
+            })
+            .collect();
 
         Ok(parsed_tokens)
     }
 }
-
 
 pub fn grammar() {
     println!("Pick:\n 1. Saved Text\n 2. Input Text");
@@ -320,25 +354,31 @@ pub fn grammar() {
                 result.iter().for_each(|t| {
                     println!("{:?}", t.detail);
                 });
-            },
+            }
             "2" => {
                 result.iter().for_each(|t| {
-                    println!("{}, {:?}, {:?}, {:?}, {:?}, {:?}", t.surface, t.pos, t.sub1, t.sub2, t.sub3, t.base);
+                    println!(
+                        "{}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                        t.surface, t.pos, t.sub1, t.sub2, t.sub3, t.base
+                    );
                 });
-            },
+            }
             "3" => {
                 let filtered = filter(&result);
                 filtered.iter().for_each(|f| {
-                    println!("Full: {}, Base: {}, POS: {:?}, Tense: {}", f.full, f.base, f.pos, f.tense);
+                    println!(
+                        "Full: {}, Base: {}, POS: {}, Tense: {}",
+                        f.full, f.base, f.pos, f.tense
+                    );
                 });
-            },
+            }
             "4" => {
                 println!("\nInput your text:");
                 let mut input = String::new();
                 std::io::stdin().read_line(&mut input).unwrap();
                 choice = input.trim().into();
                 result = PARSER.parse(&choice).unwrap();
-            },
+            }
             "5" => break,
             _ => println!("\nInvalid option. Please try again.\n"),
         }
