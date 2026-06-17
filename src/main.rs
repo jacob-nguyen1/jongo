@@ -6,15 +6,30 @@ use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
 use lindera::LinderaResult;
 
+mod jmdict;
+use jmdict::lookup;
+
 use phf::phf_map;
 
-#[derive(Debug, Clone, Copy)]
-enum PartOfSpeech {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartOfSpeech {
     Noun,
     Verb,
     AuxiliaryVerb,
     Particle,
     Unknown,
+}
+
+impl PartOfSpeech {
+    pub fn matches_jmdict(&self, pos: &::jmdict::PartOfSpeech) -> bool {
+        let pos_str = format!("{:?}", pos);
+        match self {
+            Self::Noun => pos_str.contains("Noun") || pos_str.contains("Pronoun") || pos_str.contains("Numeric"),
+            Self::Verb => pos_str.contains("Verb"),
+            Self::AuxiliaryVerb => pos_str.contains("Verb") || pos_str.contains("Auxiliary") || pos_str.contains("Copula"),
+            Self::Particle => pos_str.contains("Particle"),
+        }
+    }
 }
 
 static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
@@ -35,6 +50,8 @@ enum PartOfSpeechSubcategory1 {
 struct Token {
     surface: String,
     pos: PartOfSpeech,
+    kana: String,
+    glosses: Vec<String>,
 }
 
 struct Parser {
