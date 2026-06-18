@@ -79,7 +79,7 @@ impl JongoController {
         let sentence_str = String::from_utf16(&text_vec[sentence_start..sentence_end]).unwrap_or_default();
         console::log_1(&format!("Sentence: {}", sentence_str).into());
 
-        // spawn element
+        // initate new prompt 
         let prompt = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
 
         prompt.style().set_property("position", "fixed").unwrap();
@@ -95,18 +95,28 @@ impl JongoController {
             <button id='jong-btn'>jong</button>
         ");
 
-        // delete the old prompt
+        // delete old prompt
         if let Some(old) = self.prompt.take() {
             old.remove();
         }
 
+        // spawn new prompt
         document.body().unwrap().append_child(&prompt).unwrap();
+
+        // prevent clicks inside the prompt from deleting the jong
+        let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+            e.stop_propagation();
+        });
+        prompt.add_event_listener_with_callback("click", stop_prop.as_ref().unchecked_ref()).unwrap();
+        stop_prop.forget();
 
         let btn = document.get_element_by_id("jong-btn").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
 
+        // closure that runs when jong is clicked
         let cb = Closure::<dyn FnMut()>::new(|| {
             CONTROLLER.with(|c| {
                 if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    ctrl.analyze();
                     if let Some(old) = ctrl.prompt.take() {
                         old.remove();
                     }
@@ -120,7 +130,8 @@ impl JongoController {
         self.prompt = Some(prompt);
     }
 
-    fn analyze(&mut self) {
+    fn analyze(&mut self,) {
+        console::log_1(&format!("Hello").into());
     }
 }
 
@@ -131,7 +142,8 @@ pub fn content_start() {
 
     let window = web_sys::window().unwrap();
 
-    let mouse_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+    // mouse move
+    let mouse_move_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
         CONTROLLER.with(|c| {
             let Ok(mut ctrl) = c.try_borrow_mut() else { return; };
             ctrl.mouse_x = e.client_x() as f32;
@@ -146,10 +158,26 @@ pub fn content_start() {
         }
     });
     window
-        .add_event_listener_with_callback("mousemove", mouse_cb.as_ref().unchecked_ref())
+        .add_event_listener_with_callback("mousemove", mouse_move_cb.as_ref().unchecked_ref())
         .unwrap();
-    mouse_cb.forget();
+    mouse_move_cb.forget();
 
+    // mouse click
+    let mouse_click_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+        CONTROLLER.with(|c| {
+            if let Ok(mut ctrl) = c.try_borrow_mut() {
+                if let Some(old) = ctrl.prompt.take() {
+                    old.remove();
+                }
+            }
+        });
+    });
+    window
+        .add_event_listener_with_callback("click", mouse_click_cb.as_ref().unchecked_ref())
+        .unwrap();
+    mouse_click_cb.forget();
+
+    // key press
     let key_cb = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|e: web_sys::KeyboardEvent| {
         if e.key() == "Shift" {
             CONTROLLER.with(|c| {
