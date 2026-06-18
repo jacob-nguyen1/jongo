@@ -97,15 +97,9 @@ impl JongoController {
         let left = (rect.left() + scroll_x).max(10.0);
         element.style().set_property("left", &format!("{}px", left)).unwrap();
         element.style().set_property("transform", "translateX(-50%)").unwrap();
-        element.style().set_property("background", "white").unwrap();
-        element.style().set_property("border", "1px solid black").unwrap();
-        element.style().set_property("padding", "10px").unwrap();
         element.style().set_property("z-index", "9999").unwrap();
-        element.style().set_property("color", "black").unwrap();
 
-        element.set_inner_html("
-            <button id='jong-btn'>jong</button>
-        ");
+        element.set_inner_html("<button>jong</button>");
 
         // delete old prompt
         if let Some(old) = self.prompt.take() {
@@ -115,7 +109,7 @@ impl JongoController {
         // spawn new prompt
         document.body().unwrap().append_child(&element).unwrap();
 
-        // prevent clicks inside the prompt from deleting the jong
+        // prevent clicks inside the prompt from dismissing it
         let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
             e.stop_propagation();
         });
@@ -123,8 +117,7 @@ impl JongoController {
         stop_prop.forget();
 
         let sentence = sentence_str;
-
-        let btn = document.get_element_by_id("jong-btn").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
+        let btn = element.query_selector("button").unwrap().unwrap();
 
         // closure that runs when jong is clicked
         let cb = Closure::<dyn FnMut()>::new(move || {
