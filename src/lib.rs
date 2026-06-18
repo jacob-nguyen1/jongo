@@ -11,15 +11,23 @@ thread_local! {
     static CONTROLLER: RefCell<JongoController> = RefCell::new(JongoController::new());
 }
 
+struct AnalysisWindow {
+    id: u32,
+    element: web_sys::HtmlElement,
+    _closures: Vec<Closure<dyn FnMut()>>,
+}
+
 struct JongoController {
     mouse_x: f32,
     mouse_y: f32,
     prompt: Option<web_sys::HtmlElement>,
+    analyses: Vec<AnalysisWindow>,
+    next_id: u32,
 }
 
 impl JongoController {
     fn new() -> Self {
-        Self { mouse_x: 0.0, mouse_y: 0.0, prompt: None }
+        Self { mouse_x: 0.0, mouse_y: 0.0, prompt: None, analyses: Vec::new(), next_id: 0 }
     }
 
     fn prompt(&mut self) {
@@ -80,18 +88,20 @@ impl JongoController {
         console::log_1(&format!("Sentence: {}", sentence_str).into());
 
         // initate new prompt 
-        let prompt = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
+        let element = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
 
-        prompt.style().set_property("position", "fixed").unwrap();
-        prompt.style().set_property("top", &format!("{}px", rect.bottom())).unwrap();
-        prompt.style().set_property("left", &format!("{}px", rect.left())).unwrap();
-        prompt.style().set_property("background", "white").unwrap();
-        prompt.style().set_property("border", "1px solid black").unwrap();
-        prompt.style().set_property("padding", "10px").unwrap();
-        prompt.style().set_property("z-index", "9999").unwrap();
-        prompt.style().set_property("color", "black").unwrap();
+        element.style().set_property("position", "fixed").unwrap();
+        element.style().set_property("top", &format!("{}px", rect.bottom())).unwrap();
+        let left = rect.left().max(10.0);
+        element.style().set_property("left", &format!("{}px", left)).unwrap();
+        element.style().set_property("transform", "translateX(-50%)").unwrap();
+        element.style().set_property("background", "white").unwrap();
+        element.style().set_property("border", "1px solid black").unwrap();
+        element.style().set_property("padding", "10px").unwrap();
+        element.style().set_property("z-index", "9999").unwrap();
+        element.style().set_property("color", "black").unwrap();
 
-        prompt.set_inner_html("
+        element.set_inner_html("
             <button id='jong-btn'>jong</button>
         ");
 
@@ -101,22 +111,24 @@ impl JongoController {
         }
 
         // spawn new prompt
-        document.body().unwrap().append_child(&prompt).unwrap();
+        document.body().unwrap().append_child(&element).unwrap();
 
         // prevent clicks inside the prompt from deleting the jong
         let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
             e.stop_propagation();
         });
-        prompt.add_event_listener_with_callback("click", stop_prop.as_ref().unchecked_ref()).unwrap();
+        element.add_event_listener_with_callback("click", stop_prop.as_ref().unchecked_ref()).unwrap();
         stop_prop.forget();
+
+        let sentence = sentence_str;
 
         let btn = document.get_element_by_id("jong-btn").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
 
         // closure that runs when jong is clicked
-        let cb = Closure::<dyn FnMut()>::new(|| {
+        let cb = Closure::<dyn FnMut()>::new(move || {
             CONTROLLER.with(|c| {
                 if let Ok(mut ctrl) = c.try_borrow_mut() {
-                    ctrl.analyze();
+                    ctrl.analyze(&sentence);
                     if let Some(old) = ctrl.prompt.take() {
                         old.remove();
                     }
@@ -127,11 +139,61 @@ impl JongoController {
         btn.add_event_listener_with_callback("click", cb.as_ref().unchecked_ref()).unwrap();
         cb.forget();
 
-        self.prompt = Some(prompt);
+        self.prompt = Some(element);
     }
 
-    fn analyze(&mut self,) {
-        console::log_1(&format!("Hello").into());
+    fn analyze(&mut self, sentence: &str) {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+
+        let prompt_rect = self.prompt.as_ref().unwrap().get_bounding_client_rect();
+
+        let element = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
+        element.style().set_property("position", "fixed").unwrap();
+        element.style().set_property("top", &format!("{}px", prompt_rect.top())).unwrap();
+        element.style().set_property("left", &format!("{}px", prompt_rect.left())).unwrap();
+        element.style().set_property("background", "white").unwrap();
+        element.style().set_property("border", "1px solid black").unwrap();
+        element.style().set_property("padding", "10px").unwrap();
+        element.style().set_property("z-index", "9999").unwrap();
+        element.style().set_property("color", "black").unwrap();
+        element.set_inner_html(&format!(
+            "<p>{}</p><button class='jong-close'>✕</button>",
+            sentence
+        ));
+
+        // stop clicks inside from dismissing the prompt
+        let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+            e.stop_propagation();
+        });
+        element.add_event_listener_with_callback("click", stop_prop.as_ref().unchecked_ref()).unwrap();
+        stop_prop.forget();
+
+        document.body().unwrap().append_child(&element).unwrap();
+
+        // close button
+        let close_btn = element.query_selector(".jong-close").unwrap().unwrap();
+        let element_clone = element.clone();
+        let id = self.next_id;
+        self.next_id += 1;
+        let close_cb = Closure::<dyn FnMut()>::new(move || {
+            element_clone.remove();
+            CONTROLLER.with(|c| {
+                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    ctrl.analyses.retain(|a| a.id != id);
+                }
+            });
+        });
+        close_btn.add_event_listener_with_callback("click", close_cb.as_ref().unchecked_ref()).unwrap();
+
+        let analysis = AnalysisWindow {
+            id,
+            element,
+            _closures: vec![close_cb],
+        };
+        self.analyses.push(analysis);
+
+        console::log_1(&format!("Analyzing: {}", sentence).into());
     }
 }
 
