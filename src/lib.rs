@@ -90,9 +90,11 @@ impl JongoController {
         // initate new prompt 
         let element = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
 
-        element.style().set_property("position", "fixed").unwrap();
-        element.style().set_property("top", &format!("{}px", rect.bottom())).unwrap();
-        let left = rect.left().max(10.0);
+        element.style().set_property("position", "absolute").unwrap();
+        let scroll_x = window.scroll_x().unwrap_or(0.0);
+        let scroll_y = window.scroll_y().unwrap_or(0.0);
+        element.style().set_property("top", &format!("{}px", rect.bottom() + scroll_y)).unwrap();
+        let left = (rect.left() + scroll_x).max(10.0);
         element.style().set_property("left", &format!("{}px", left)).unwrap();
         element.style().set_property("transform", "translateX(-50%)").unwrap();
         element.style().set_property("background", "white").unwrap();
@@ -149,18 +151,26 @@ impl JongoController {
         let prompt_rect = self.prompt.as_ref().unwrap().get_bounding_client_rect();
 
         let element = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
-        element.style().set_property("position", "fixed").unwrap();
-        element.style().set_property("top", &format!("{}px", prompt_rect.top())).unwrap();
-        element.style().set_property("left", &format!("{}px", prompt_rect.left())).unwrap();
+        element.style().set_property("position", "absolute").unwrap();
+        let scroll_x = window.scroll_x().unwrap_or(0.0);
+        let scroll_y = window.scroll_y().unwrap_or(0.0);
+        element.style().set_property("top", &format!("{}px", prompt_rect.top() + scroll_y)).unwrap();
+        element.style().set_property("left", &format!("{}px", prompt_rect.left() + scroll_x)).unwrap();
         element.style().set_property("background", "white").unwrap();
         element.style().set_property("border", "1px solid black").unwrap();
         element.style().set_property("padding", "10px").unwrap();
         element.style().set_property("z-index", "9999").unwrap();
         element.style().set_property("color", "black").unwrap();
-        element.set_inner_html(&format!(
-            "<p>{}</p><button class='jong-close'>✕</button>",
-            sentence
-        ));
+        element.style().set_property("max-height", "300px").unwrap();
+        element.style().set_property("overflow-y", "auto").unwrap();
+        let results = grammar::analyze_sentence(sentence);
+
+        let mut html = String::from("<button class='jong-close' style='position:absolute;top:4px;right:4px;background:red;color:white;border:none;cursor:pointer;padding:2px 6px'>✕</button>");
+        for f in &results {
+            html.push_str(&format!("{} | {} | {}<br>", f.full, f.base, f.pos));
+        }
+
+        element.set_inner_html(&html);
 
         // stop clicks inside from dismissing the prompt
         let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
