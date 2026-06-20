@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
+jmdict = "2.0.0"
 lindera = { version = "3.0.7", features = ["embed-ipadic"] }
 phf = { version = "0.13.1", features = ["macros"] }
 wasm-bindgen = "0.2.123"

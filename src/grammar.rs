@@ -1,4 +1,3 @@
-use std::string;
 use std::sync::LazyLock;
 use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
@@ -8,7 +7,7 @@ use lindera::LinderaResult;
 use phf::phf_map;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PartOfSpeech {
+pub enum PartOfSpeech {
     Noun,
     Prefix,
     Verb,
@@ -23,6 +22,20 @@ enum PartOfSpeech {
     Filler,
     Others,
     ERR,
+}
+
+impl PartOfSpeech {
+    pub fn matches_jmdict(&self, p: &jmdict::PartOfSpeech) -> bool {
+        let p_str = format!("{:?}", p).to_lowercase();
+        match self {
+            PartOfSpeech::Noun => p_str.contains("noun"),
+            PartOfSpeech::Verb => p_str.contains("verb"),
+            PartOfSpeech::Adjective => p_str.contains("adjective"),
+            PartOfSpeech::Adverb => p_str.contains("adverb"),
+            PartOfSpeech::Particle => p_str.contains("particle"),
+            _ => true,
+        }
+    }
 }
 
 static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {

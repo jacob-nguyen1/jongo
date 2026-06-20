@@ -1,4 +1,5 @@
 pub mod grammar;
+pub mod jmdict;
 
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
@@ -98,8 +99,12 @@ impl JongoController {
         element.style().set_property("left", &format!("{}px", left)).unwrap();
         element.style().set_property("transform", "translateX(-50%)").unwrap();
         element.style().set_property("z-index", "9999").unwrap();
+        element.style().set_property("background", "white").unwrap();
+        element.style().set_property("border", "1px solid black").unwrap();
+        element.style().set_property("padding", "10px").unwrap();
+        element.style().set_property("color", "black").unwrap();
 
-        element.set_inner_html("<button>jong</button>");
+        element.set_inner_html("<button style='all:revert'>jong</button>");
 
         // delete old prompt
         if let Some(old) = self.prompt.take() {
@@ -228,7 +233,7 @@ pub fn content_start() {
     mouse_move_cb.forget();
 
     // mouse click
-    let mouse_click_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+    let mouse_click_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|_e: web_sys::MouseEvent| {
         CONTROLLER.with(|c| {
             if let Ok(mut ctrl) = c.try_borrow_mut() {
                 if let Some(old) = ctrl.prompt.take() {
