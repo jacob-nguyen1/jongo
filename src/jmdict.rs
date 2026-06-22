@@ -1,3 +1,5 @@
+use jmdict::{entries, GlossLanguage, Enum};
+
 
 pub fn lookup(word: &str, pos: crate::grammar::PartOfSpeech) -> Option<(String, Vec<String>)> {
     for entry in jmdict::entries() {

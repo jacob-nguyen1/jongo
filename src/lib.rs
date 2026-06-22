@@ -165,7 +165,16 @@ impl JongoController {
 
         let mut html = String::from("<button class='jong-close' style='position:absolute;top:4px;right:4px;background:red;color:white;border:none;cursor:pointer;padding:2px 6px'>✕</button>");
         for f in &results {
-            html.push_str(&format!("{} | {} | {}<br>", f.full, f.base, f.pos));
+            if let Some((kana, english_defs)) = crate::jmdict::lookup(&f.base, f.pos) {
+                html.push_str(&format!(
+                    "<div>
+                        <strong style='font-weight: bold;'>{}</strong> ({}) {} 
+                    </div>", 
+                    f.full, kana, english_defs.join(", ")
+                ));
+            } else {
+                html.push_str(&format!("{} - ?<br>", f.full));
+            }
         }
 
         element.set_inner_html(&html);

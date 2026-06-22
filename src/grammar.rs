@@ -203,7 +203,7 @@ struct Token {
 pub struct Filtered{
     pub full: String,
     pub base: String,
-    pub pos: String,
+    pub pos: PartOfSpeech,
     pub tense: String,
 }
 
@@ -213,7 +213,7 @@ fn filter(line: &[Token]) -> Vec<Filtered> {
         .map(|token| Filtered {
             full: token.surface.clone(),
             base: token.base.clone(),
-            pos: format!("{:?}", token.pos),
+            pos: token.pos,
             tense: String::from("wip"),
         }).collect()
 }
@@ -323,7 +323,7 @@ pub fn grammar() {
             "3" => {
                 let filtered = filter(&result);
                 filtered.iter().for_each(|f| {
-                    println!("Full: {}, Base: {}, POS: {}, Tense: {}", f.full, f.base, f.pos, f.tense);
+                    println!("Full: {}, Base: {}, POS: {:?}, Tense: {}", f.full, f.base, f.pos, f.tense);
                 });
             },
             "4" => {
