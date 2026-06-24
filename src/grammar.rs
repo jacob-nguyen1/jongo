@@ -1,4 +1,3 @@
-use std::string;
 use std::sync::LazyLock;
 use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
@@ -8,7 +7,7 @@ use lindera::LinderaResult;
 use phf::phf_map;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PartOfSpeech {
+pub enum PartOfSpeech {
     Noun,
     Prefix,
     Verb,
@@ -23,6 +22,20 @@ enum PartOfSpeech {
     Filler,
     Others,
     ERR,
+}
+
+impl PartOfSpeech {
+    pub fn matches_jmdict(&self, p: &jmdict::PartOfSpeech) -> bool {
+        let p_str = format!("{:?}", p).to_lowercase();
+        match self {
+            PartOfSpeech::Noun => p_str.contains("noun"),
+            PartOfSpeech::Verb => p_str.contains("verb"),
+            PartOfSpeech::Adjective => p_str.contains("adjective"),
+            PartOfSpeech::Adverb => p_str.contains("adverb"),
+            PartOfSpeech::Particle => p_str.contains("particle"),
+            _ => true,
+        }
+    }
 }
 
 static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
@@ -187,41 +200,22 @@ struct Token {
     base: String,
 }
 
-struct Filtered{
-    full: String,
-    base: String,
-    pos: String,
-    tense: String,
+pub struct Filtered{
+    pub full: String,
+    pub base: String,
+    pub pos: PartOfSpeech,
+    pub tense: String,
 }
 
 fn filter(line: &[Token]) -> Vec<Filtered> {
-    let mut filtered_tokens: Vec<Filtered> = Vec::new();
-    let mut i = 0;
-    while i < line.len() {
-        let token = &line[i];
-        let pos=token.pos.clone();
-        let base=token.base.clone();
-        let mut conj=token.surface.clone();
-        if token.surface != token.base && (token.surface!="な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
-            i+=1;
-            while i < line.len() && line[i].pos != PartOfSpeech::Symbol && line[i].sub1 != PartOfSpeechSubcategory1::Unbound {
-                conj = conj + &line[i].surface;
-                if i + 1 < line.len() {
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
-        }
-        filtered_tokens.push(Filtered{
-            full: conj,
-            base: base,
-            pos: format!("{:?}", pos),
+    line.iter()
+        .filter(|token| token.pos != PartOfSpeech::Symbol)
+        .map(|token| Filtered {
+            full: token.surface.clone(),
+            base: token.base.clone(),
+            pos: token.pos,
             tense: String::from("wip"),
-        });
-        i+=1;
-    }
-    filtered_tokens
+        }).collect()
 }
 struct Parser {
     tokenizer: Tokenizer,
@@ -283,6 +277,13 @@ impl Parser {
     }
 }
 
+pub fn analyze_sentence(text: &str) -> Vec<Filtered> {
+    match PARSER.parse(text) {
+        Ok(tokens) => filter(&tokens),
+        Err(_) => Vec::new(),
+    }
+}
+
 
 pub fn grammar() {
     println!("Pick:\n 1. Saved Text\n 2. Input Text");
@@ -322,7 +323,7 @@ pub fn grammar() {
             "3" => {
                 let filtered = filter(&result);
                 filtered.iter().for_each(|f| {
-                    println!("Full: {}, Base: {}, POS: {}, Tense: {}", f.full, f.base, f.pos, f.tense);
+                    println!("Full: {}, Base: {}, POS: {:?}, Tense: {}", f.full, f.base, f.pos, f.tense);
                 });
             },
             "4" => {
