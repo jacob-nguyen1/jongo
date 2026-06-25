@@ -1,3 +1,5 @@
+use jongo::grammar::grammar;
+
 fn main() {
-    println!("Hello world");
+    grammar();
 }

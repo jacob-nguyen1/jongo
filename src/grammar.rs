@@ -4,7 +4,6 @@ use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
 use phf::phf_map;
-use std::string;
 use std::sync::LazyLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
