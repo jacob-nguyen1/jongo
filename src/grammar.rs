@@ -55,7 +55,7 @@ static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PartOfSpeechSubcategory1 {
+pub enum PartOfSpeechSubcategory1 {
     SuruVerb,
     NaiAdjStem,
     General,
@@ -199,10 +199,12 @@ struct Token {
     detail: Vec<String>,
     base: String,
 }
+#[derive(Clone)]
 pub struct ProcToken {
     pub full: String,
     pub base: String,
     pub pos: PartOfSpeech,
+    pub sub1: PartOfSpeechSubcategory1,
     pub tense: String,
 }
 
@@ -213,6 +215,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let token = line.get(i).unwrap();
         let pos = token.pos.clone();
         let base = token.base.clone();
+        let sub1 = token.sub1;
         let mut conj = token.surface.clone();
         if token.surface != token.base
             && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb)
@@ -224,7 +227,8 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 && (line[j].pos == PartOfSpeech::AuxiliaryVerb
                     || line[j].sub1 == PartOfSpeechSubcategory1::Bound
                     || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
-                    || line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle)
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
+                        && (line[j].surface == "て" || line[j].surface == "で")))
             {
                 conj = conj + &line[j].surface;
                 j += 1;
@@ -236,6 +240,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             full: conj,
             base,
             pos: pos,
+            sub1,
             tense: String::from("wip"),
         });
         i += 1;

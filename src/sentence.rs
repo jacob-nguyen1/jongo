@@ -1,4 +1,4 @@
-use crate::grammar::{analyze_sentence, ProcToken, PartOfSpeech};
+use crate::grammar::{analyze_sentence, ProcToken, PartOfSpeech, PartOfSpeechSubcategory1};
 
 pub struct Sentence {
     pub clauses: Vec<Clause>,
@@ -47,16 +47,49 @@ pub enum ParticleRole {
 fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
     let mut clauses: Vec<Clause> = Vec::new();
     let mut chunks: Vec<Chunk> = Vec::new();
-    let mut iter = tokens.into_iter().peekable();
-
-    while let Some(token) = iter.next() {
-        let next = iter.peek();
+    
+    let mut i = 0;
+    while i < tokens.len() {
+        let current = &tokens[i];
         
         chunks.push(Chunk {
-            word: token,
+            word: current.clone(),
             particle_role: None,
             modifiers: Vec::new(),
-        })
+        });
+
+        let next = tokens.get(i + 1).map(|t| t.full.as_str());
+        
+        match current {
+            // === CLAUSE SEPARATION ===
+
+            // te-form verb marks continuation
+            // りんごを食べて水を飲んだ
+            ProcToken { pos: PartOfSpeech::Verb, full, .. } if (full.ends_with("て") || full.ends_with("で")) && next != Some("は") && next != Some("も") => {
+                clauses.push(Clause { chunks, relation: ClauseRelation::Continuation });
+                chunks = Vec::new();
+                i += 1;
+            }
+
+            // Standalone conjunctive particles
+            // 雨が降っているので行きません。
+            ProcToken { pos: PartOfSpeech::Particle, sub1: PartOfSpeechSubcategory1::ConjuctiveParticle, full, .. } => {
+                let relation = match full.as_str() {
+                    "から" | "ので" => ClauseRelation::Reason,
+                    "けど" | "が" => ClauseRelation::Contrast,
+                    "のに" => ClauseRelation::Concessive,
+                    "ば" | "たら" => ClauseRelation::Conditional,
+                    _ => ClauseRelation::Main,
+                };
+                clauses.push(Clause { chunks, relation });
+                chunks = Vec::new();
+                i += 1;
+            }
+
+            _ => { 
+                i += 1; 
+            }
+        }
     }
 
     if !chunks.is_empty() {
@@ -99,7 +132,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("りんごを食べた人は走っている");
+        let tokens = analyze_sentence("雨が降っているので行きません。");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
