@@ -7,11 +7,28 @@ pub struct Sentence {
 pub struct Clause {
     pub chunks: Vec<Chunk>,
     pub relation: ClauseRelation,
+    pub connective: Option<ProcToken>,
 }
 
 impl Clause {
     pub fn text(&self) -> String {
-        self.chunks.iter().map(|c| c.word.full.as_str()).collect()
+        let mut text: String = self.chunks.iter().filter_map(|c| {
+            if c.word.pos == PartOfSpeech::Symbol {
+                None
+            } else {
+                let mut s = c.word.full.clone();
+                if let Some(p) = &c.particle {
+                    s.push_str(&p.full);
+                }
+                Some(s)
+            }
+        }).collect();
+        
+        if let Some(conn) = &self.connective {
+            text.push_str(&conn.full);
+        }
+        
+        text
     }
 }
 
@@ -77,7 +94,7 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
             
             // Relative clause: Verb immediately followed by Noun
             ProcToken { pos: PartOfSpeech::Verb, .. } if next_pos == Some(PartOfSpeech::Noun) => {
-                let modifier_clause = Clause { chunks, relation: ClauseRelation::Modifier };
+                let modifier_clause = Clause { chunks, relation: ClauseRelation::Modifier, connective: None };
                 pending_modifiers.push(Modifier::Clause(Box::new(modifier_clause)));
                 chunks = Vec::new();
                 i += 1;
@@ -88,7 +105,7 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
             // te-form verb marks continuation
             // りんごを食べて水を飲んだ
             ProcToken { pos: PartOfSpeech::Verb, full, .. } if (full.ends_with("て") || full.ends_with("で")) && next_str != Some("は") && next_str != Some("も") => {
-                clauses.push(Clause { chunks, relation: ClauseRelation::Continuation });
+                clauses.push(Clause { chunks, relation: ClauseRelation::Continuation, connective: None });
                 chunks = Vec::new();
                 i += 1;
             }
@@ -103,7 +120,8 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                     "ば" | "たら" => ClauseRelation::Conditional,
                     _ => ClauseRelation::Main,
                 };
-                clauses.push(Clause { chunks, relation });
+                let connective = chunks.pop().map(|c| c.word);
+                clauses.push(Clause { chunks, relation, connective });
                 chunks = Vec::new();
                 i += 1;
             }
@@ -118,49 +136,64 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         clauses.push(Clause {
             chunks: chunks,
             relation: ClauseRelation::Main,
+            connective: None,
         });
     }
 
     let mut sentence = Sentence { clauses };
 
-    // === PARTICLE ROLE ASSIGNMENT === 
+    // ==========================================
+    // PASS 2: PARTICLE ROLE ASSIGNMENT
+    // ==========================================
     for clause in &mut sentence.clauses {
-        let mut new_chunks = Vec::new();
-        let old_chunks = std::mem::take(&mut clause.chunks);
-        let mut iter = old_chunks.into_iter().peekable();
-        
-        while let Some(mut chunk) = iter.next() {
-            if chunk.word.pos == PartOfSpeech::Noun {
-                if let Some(next_chunk) = iter.peek() {
-                    let next_word = &next_chunk.word;
-                    if next_word.pos == PartOfSpeech::Particle &&
-                       (next_word.sub1 == PartOfSpeechSubcategory1::MarkingParticle || 
-                        next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle) 
-                    {
-                        chunk.particle_role = match next_word.full.as_str() {
-                            "が" => Some(ParticleRole::Subject),
-                            "を" => Some(ParticleRole::Object),
-                            "は" => Some(ParticleRole::Topic),
-                            "に" => Some(ParticleRole::IndirectObject),
-                            "へ" => Some(ParticleRole::Destination),
-                            "で" => Some(ParticleRole::LocationAction),
-                            "から" => Some(ParticleRole::Source),
-                            "まで" => Some(ParticleRole::Limit),
-                            _ => None, // Unmapped particle
-                        };
-                        chunk.particle = Some(next_word.clone());
-                        
-                        // skip the particle 
-                        iter.next();
-                    }
-                }
-            }
-            new_chunks.push(chunk);
-        }
-        clause.chunks = new_chunks;
+        assign_particle_roles(clause);
     }
 
     Some(sentence)
+}
+
+fn assign_particle_roles(clause: &mut Clause) {
+    let mut new_chunks = Vec::new();
+    let old_chunks = std::mem::take(&mut clause.chunks);
+    let mut iter = old_chunks.into_iter().peekable();
+    
+    while let Some(mut chunk) = iter.next() {
+        if chunk.word.pos == PartOfSpeech::Noun {
+            if let Some(next_chunk) = iter.peek() {
+                let next_word = &next_chunk.word;
+                if next_word.pos == PartOfSpeech::Particle &&
+                   (next_word.sub1 == PartOfSpeechSubcategory1::MarkingParticle || 
+                    next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle) 
+                {
+                    chunk.particle_role = match next_word.full.as_str() {
+                        "が" => Some(ParticleRole::Subject),
+                        "を" => Some(ParticleRole::Object),
+                        "は" => Some(ParticleRole::Topic),
+                        "に" => Some(ParticleRole::IndirectObject),
+                        "へ" => Some(ParticleRole::Destination),
+                        "で" => Some(ParticleRole::LocationAction),
+                        "から" => Some(ParticleRole::Source),
+                        "まで" => Some(ParticleRole::Limit),
+                        _ => None, // Unmapped particle
+                    };
+                    chunk.particle = Some(next_word.clone());
+                    
+                    // Consume the particle so it doesn't become a standalone chunk
+                    iter.next();
+                }
+            }
+        }
+
+        // recurse into modifier clauses
+        for modifier in &mut chunk.modifiers {
+            if let Modifier::Clause(inner_clause) = modifier {
+                assign_particle_roles(inner_clause);
+            }
+        }
+
+        new_chunks.push(chunk);
+    }
+    clause.chunks = new_chunks;
 }
 
 impl Sentence {
@@ -168,7 +201,12 @@ impl Sentence {
         println!("Sentence");
         for clause in &self.clauses {
             println!("└── Clause ({:?})", clause.relation);
+            
             for chunk in &clause.chunks {
+                if chunk.word.pos == PartOfSpeech::Symbol {
+                    continue;
+                }
+                
                 print!("    ├── Chunk: {}", chunk.word.full);
                 if let Some(particle) = &chunk.particle {
                     print!(" {}", particle.full);
@@ -185,6 +223,10 @@ impl Sentence {
                     }
                 }
             }
+            
+            if let Some(conn) = &clause.connective {
+                println!("    └── Connective: {}", conn.full);
+            }
         }
     }
 }
@@ -196,7 +238,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("友達がくれたりんごを食べた");
+        let tokens = analyze_sentence("彼女が作った料理を食べたけど、あまり好きじゃなかった。");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
