@@ -6,6 +6,8 @@ use lindera::tokenizer::Tokenizer;
 use phf::phf_map;
 use std::sync::LazyLock;
 
+use crate::grammar::PartOfSpeech::Verb;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PartOfSpeech {
     Noun,
@@ -175,6 +177,135 @@ static POS_SUB3_MAP: phf::Map<&'static str, PartOfSpeechSubcategory3> = phf_map!
     "国" => PartOfSpeechSubcategory3::Country,
     "*" => PartOfSpeechSubcategory3::X,
 };
+
+enum AdjConjugations {
+    Garu,
+    Plain,
+    NounConnection,
+    ClassicalPlain,
+    GozaiConjunction,
+    DoubleConsonant,
+}
+
+static ADJ_CONJ_MAP: phf::Map<&'static str, AdjConjugations> = phf_map! {
+    "ガル接続" => AdjConjugations::Garu,
+    "基本形" => AdjConjugations::Plain,
+    "体言接続" => AdjConjugations::NounConnection,
+    "文語基本形" => AdjConjugations::ClassicalPlain,
+    "連用ゴザイ接続" => AdjConjugations::GozaiConjunction,
+    "基本形-促音便" => AdjConjugations::DoubleConsonant,
+};
+
+enum VerbConjugations {
+    ImperativeYo,
+    AReruConnection,
+    Plain,
+    ClassicalPlain,
+    NounConnection,
+    ContractedRuNNo,
+    AUConnection,
+    ContractedRaNNai,
+    ContractedRuNo,
+}
+
+static VERB_CONJ_MAP: phf::Map<&'static str, VerbConjugations> = phf_map! {
+    "命令ｙｏ" => VerbConjugations::ImperativeYo,
+    "未然レル接続" => VerbConjugations::AReruConnection,
+    "基本形" => VerbConjugations::Plain,
+    "文語基本形" => VerbConjugations::ClassicalPlain,
+    "体言接続" => VerbConjugations::NounConnection,
+    "体言接続特殊" => VerbConjugations::ContractedRuNNo,
+    "未然ウ接続" => VerbConjugations::AUConnection,
+    "未然特殊" => VerbConjugations::ContractedRaNNai,
+    "体言接続特殊２" => VerbConjugations::ContractedRuNo
+};
+
+enum AuxVerbConjugations {
+    ImperativeYo,
+    Garu,
+    Plain,
+    NounConnection,
+    ClassicalPlain,
+    GozaiConjunction,
+    ContractedRuNNo,
+    AUConnection,
+    ContractedRaNNai
+}
+
+static AUX_VERB_CONJ_MAP: phf::Map<&'static str, AuxVerbConjugations> = phf_map! {
+    "命令ｙｏ" => AuxVerbConjugations::ImperativeYo,
+    "ガル接続" => AuxVerbConjugations::Garu,
+    "基本形" => AuxVerbConjugations::Plain,
+    "体言接続" => AuxVerbConjugations::NounConnection,
+    "文語基本形" => AuxVerbConjugations::ClassicalPlain,
+    "連用ゴザイ接続" => AuxVerbConjugations::GozaiConjunction,
+    "体言接続特殊" => AuxVerbConjugations::ContractedRuNNo,
+    "未然ウ接続" => AuxVerbConjugations::AUConnection,
+    "未然特殊" => AuxVerbConjugations::ContractedRaNNai,
+};
+
+enum CTypes {
+    AdjectiveAUODan,
+    AdjectiveII,
+    AdjectiveIDan,
+    Invariable,
+    IrregularKuRu,
+    DependentSuRuConnection,
+    DependentZuRuConnection,
+    IndependentSuruConnection,
+    IrregularRaVerb,
+    RuVerb,
+    KuReRu,
+    HaRowUEConjugation,
+    IrregularERu,
+    IrregularIKuTeForm,
+    BuUVerb,
+    MuUVerb,
+    RuUVerb,
+    WaUVerb,
+    TsuVerb,
+    AruVerb,
+    KeigoAruVerb,
+    IrregularTa,
+    IrregularTai,
+    IrregularNu,
+    IrregularMaSu,
+    ClassicalKi,
+    ClassicalBeShi,
+    ClassicalRu,
+}
+
+static C_TYPE_MAP: phf::Map<&'static str, CTypes> = phf_map! {
+    "形容詞・アウオ段" => CTypes::AdjectiveAUODan,
+    "形容詞・イイ" => CTypes::AdjectiveII,
+    "形容詞・イ段" => CTypes::AdjectiveIDan,
+    "不変化型" => CTypes::Invariable,
+    "カ変・来ル" => CTypes::IrregularKuRu,
+    "サ変・−スル" => CTypes::DependentSuRuConnection,
+    "サ変・−ズル" => CTypes::DependentZuRuConnection,
+    "サ変・スル" => CTypes::IndependentSuruConnection,
+    "ラ変" => CTypes::IrregularRaVerb,
+    "一段" => CTypes::RuVerb,
+    "一段・クレル" => CTypes::KuReRu,
+    "下二・ハ行" => CTypes::HaRowUEConjugation,
+    "下二・得" => CTypes::IrregularERu,
+    "五段・カ行促音便ユク" => CTypes::IrregularIKuTeForm,
+    "五段・バ行" => CTypes::BuUVerb,
+    "五段・マ行" => CTypes::MuUVerb,
+    "五段・ラ行" => CTypes::RuUVerb,
+    "五段・ワ行促音便" => CTypes::WaUVerb,
+    "下二・タ行" => CTypes::TsuVerb,
+    "五段・ラ行アル" => CTypes::AruVerb,
+    "五段・ラ行特殊" => CTypes::KeigoAruVerb,
+    "特殊・タ" => CTypes::IrregularTa,
+    "特殊・タイ" => CTypes::IrregularTai,
+    "特殊・ヌ" => CTypes::IrregularNu,
+    "特殊・マス" => CTypes::IrregularMaSu,
+    "文語・キ" => CTypes::ClassicalKi,
+    "文語・ベシ" => CTypes::ClassicalBeShi,
+    "文語・ル" => CTypes::ClassicalRu,
+};
+
 
 struct Token {
     surface: String,
