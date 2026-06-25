@@ -1,5 +1,6 @@
 pub mod grammar;
 pub mod jmdict;
+pub mod sentence;
 
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;

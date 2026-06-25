@@ -199,45 +199,15 @@ struct Token {
     detail: Vec<String>,
     base: String,
 }
-enum ProcTokens {
-    Verb(ProcVerbToken),
-}
-
-trait ProcToken<'a> {
-    fn full(&self) -> &str;
-    fn base(&self) -> &str;
-    fn pos(&self) -> PartOfSpeech;
-}
-
-pub struct ProcVerbToken {
+pub struct ProcToken {
     pub full: String,
     pub base: String,
     pub pos: PartOfSpeech,
     pub tense: String,
 }
 
-impl ProcToken<'_> for ProcVerbToken {
-    fn full(&self) -> &str {
-        &self.full
-    }
-
-    fn base(&self) -> &str {
-        &self.base
-    }
-
-    fn pos(&self) -> PartOfSpeech {
-        self.pos 
-    }
-}
-
-impl ProcVerbToken {
-    fn tense(&self) -> &str {
-        &self.tense
-    }
-}
-
-fn filter(line: &[Token]) -> Vec<ProcVerbToken> {
-    let mut filtered_tokens: Vec<ProcVerbToken> = Vec::new();
+fn filter(line: &[Token]) -> Vec<ProcToken> {
+    let mut filtered_tokens: Vec<ProcToken> = Vec::new();
     let mut i = 0;
     while i < line.len() {
         let token = line.get(i).unwrap();
@@ -247,20 +217,22 @@ fn filter(line: &[Token]) -> Vec<ProcVerbToken> {
         if token.surface != token.base
             && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb)
         {
-            i += 1;
-            while i < line.len()
-                && line[i].pos != PartOfSpeech::Symbol
-                && line[i].sub1 != PartOfSpeechSubcategory1::Unbound
+            // [AI GENERATED FIX START] 
+            // Fixed Khan's off-by-one error that was deleting the token immediately following a merged verb
+            let mut j = i + 1;
+            while j < line.len()
+                && (line[j].pos == PartOfSpeech::AuxiliaryVerb
+                    || line[j].sub1 == PartOfSpeechSubcategory1::Bound
+                    || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
+                    || line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle)
             {
-                conj = conj + &line[i].surface;
-                if i + 1 < line.len() {
-                    i += 1;
-                } else {
-                    break;
-                }
+                conj = conj + &line[j].surface;
+                j += 1;
             }
+            i = j - 1; // Outer loop will increment i by 1, bringing it exactly to j
+            // [AI GENERATED FIX END]
         }
-        filtered_tokens.push(ProcVerbToken {
+        filtered_tokens.push(ProcToken {
             full: conj,
             base,
             pos: pos,
@@ -338,7 +310,7 @@ impl Parser {
     }
 }
 
-pub fn analyze_sentence(text: &str) -> Vec<ProcVerbToken> {
+pub fn analyze_sentence(text: &str) -> Vec<ProcToken> {
     match PARSER.parse(text) {
         Ok(tokens) => filter(&tokens),
         Err(_) => Vec::new(),
