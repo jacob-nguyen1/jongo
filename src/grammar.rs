@@ -207,7 +207,7 @@ pub struct ConjugationFeatures {
     pub is_te_form: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ProcToken {
     pub full: String,
     pub base: String,

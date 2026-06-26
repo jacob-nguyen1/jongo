@@ -4,6 +4,7 @@ pub struct Sentence {
     pub clauses: Vec<Clause>,
 }
 
+#[derive(Debug)]
 pub struct Clause {
     pub chunks: Vec<Chunk>,
     pub relation: ClauseRelation,
@@ -32,6 +33,7 @@ impl Clause {
     }
 }
 
+#[derive(Debug)]
 pub struct Chunk {
     pub word: ProcToken,
     pub particle: Option<ProcToken>,
@@ -39,8 +41,10 @@ pub struct Chunk {
     pub modifiers: Vec<Modifier>,
 }
 
+#[derive(Debug)]
 pub enum Modifier {
     Adjective(ProcToken),
+    Limitation(Box<Chunk>),
     Clause(Box<Clause>),
 }
 
@@ -92,6 +96,16 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         match current {
             // === MODIFIER DETECTION ===
             
+            // "の" Particle linking two nouns
+            ProcToken { pos: PartOfSpeech::Particle, sub1: PartOfSpeechSubcategory1::NormalizingParticle, .. } => {
+                let no_chunk = chunks.pop().unwrap(); // Remove the `の`
+                if let Some(mut prev_chunk) = chunks.pop() {
+                    prev_chunk.particle = Some(no_chunk.word);
+                    pending_modifiers.push(Modifier::Limitation(Box::new(prev_chunk)));
+                }
+                i += 1;
+            }
+
             // Relative clause: Verb immediately followed by Noun
             ProcToken { pos: PartOfSpeech::Verb, .. } if next_pos == Some(PartOfSpeech::Noun) => {
                 let modifier_clause = Clause { chunks, relation: ClauseRelation::Modifier, connective: None };
@@ -219,6 +233,13 @@ impl Sentence {
                 for modifier in &chunk.modifiers {
                     match modifier {
                         Modifier::Adjective(adj) => println!("    │   └── mod: {}", adj.full),
+                        Modifier::Limitation(lim_chunk) => {
+                            print!("    │   └── lim: {}", lim_chunk.word.full);
+                            if let Some(p) = &lim_chunk.particle {
+                                print!(" {}", p.full);
+                            }
+                            println!();
+                        },
                         Modifier::Clause(clause) => println!("    │   └── mod: [{}]", clause.text()),
                     }
                 }
@@ -238,7 +259,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("彼女が作った料理を食べたけど、あまり好きじゃなかった。");
+        let tokens = analyze_sentence("『志賀寺上人の恋』は、三島由紀夫の短編小説");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
