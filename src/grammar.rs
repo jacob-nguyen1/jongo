@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 use crate::grammar::PartOfSpeech::Verb;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PartOfSpeech {
+pub enum PartOfSpeech {
     Noun,
     Prefix,
     Verb,
@@ -24,6 +24,20 @@ enum PartOfSpeech {
     Filler,
     Others,
     ERR,
+}
+
+impl PartOfSpeech {
+    pub fn matches_jmdict(&self, p: &jmdict::PartOfSpeech) -> bool {
+        let p_str = format!("{:?}", p).to_lowercase();
+        match self {
+            PartOfSpeech::Noun => p_str.contains("noun"),
+            PartOfSpeech::Verb => p_str.contains("verb"),
+            PartOfSpeech::Adjective => p_str.contains("adjective"),
+            PartOfSpeech::Adverb => p_str.contains("adverb"),
+            PartOfSpeech::Particle => p_str.contains("particle"),
+            _ => true,
+        }
+    }
 }
 
 static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
@@ -43,7 +57,7 @@ static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PartOfSpeechSubcategory1 {
+pub enum PartOfSpeechSubcategory1 {
     SuruVerb,
     NaiAdjStem,
     General,
@@ -316,72 +330,74 @@ struct Token {
     detail: Vec<String>,
     base: String,
 }
-enum ProcTokens {
-    Verb(ProcVerbToken),
+// [AI GENERATED START]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConjugationFeatures {
+    pub is_negative: bool,
+    pub is_past: bool,
+    pub is_te_form: bool,
 }
 
-trait ProcToken<'a> {
-    fn full(&self) -> &str;
-    fn base(&self) -> &str;
-    fn pos(&self) -> &str;
+#[derive(Debug, Clone)]
+pub struct ProcToken {
+    pub full: String,
+    pub base: String,
+    pub pos: PartOfSpeech,
+    pub sub1: PartOfSpeechSubcategory1,
+    pub conjugation: Option<ConjugationFeatures>,
 }
+// [AI GENERATED END]
 
-struct ProcVerbToken {
-    full: String,
-    base: String,
-    pos: String,
-    tense: String,
-}
-
-impl ProcToken<'_> for ProcVerbToken {
-    fn full(&self) -> &str {
-        &self.full
-    }
-
-    fn base(&self) -> &str {
-        &self.base
-    }
-
-    fn pos(&self) -> &str {
-        &self.pos
-    }
-}
-
-impl ProcVerbToken {
-    fn tense(&self) -> &str {
-        &self.tense
-    }
-}
-
-fn filter(line: &[Token]) -> Vec<ProcVerbToken> {
-    let mut filtered_tokens: Vec<ProcVerbToken> = Vec::new();
+fn filter(line: &[Token]) -> Vec<ProcToken> {
+    let mut filtered_tokens: Vec<ProcToken> = Vec::new();
     let mut i = 0;
     while i < line.len() {
         let token = line.get(i).unwrap();
         let pos = token.pos.clone();
         let base = token.base.clone();
+        let sub1 = token.sub1;
         let mut conj = token.surface.clone();
-        if token.surface != token.base
-            && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb)
-        {
-            i += 1;
-            while i < line.len()
-                && line[i].pos != PartOfSpeech::Symbol
-                && line[i].sub1 != PartOfSpeechSubcategory1::Unbound
+        // [AI GENERATED START]
+        let mut should_merge = false;
+        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
+            should_merge = true;
+        } else if i + 1 < line.len() {
+            let next_token = &line[i + 1];
+            if next_token.pos == PartOfSpeech::AuxiliaryVerb 
+               || next_token.sub1 == PartOfSpeechSubcategory1::Bound 
+               || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle 
+                   && (next_token.surface == "じゃ" || next_token.surface == "では"))
             {
-                conj = conj + &line[i].surface;
-                if i + 1 < line.len() {
-                    i += 1;
-                } else {
-                    break;
-                }
+                should_merge = true;
             }
         }
-        filtered_tokens.push(ProcVerbToken {
+
+        if should_merge {
+            // Fixed Khan's off-by-one error that was deleting the token immediately following a merged verb
+            let mut j = i + 1;
+            while j < line.len()
+                && (line[j].pos == PartOfSpeech::AuxiliaryVerb
+                    || line[j].sub1 == PartOfSpeechSubcategory1::Bound
+                    || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
+                        && (line[j].surface == "て" || line[j].surface == "で"))
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::AdverbialParticle
+                        && (line[j].surface == "じゃ" || line[j].surface == "では")))
+            {
+                conj = conj + &line[j].surface;
+                j += 1;
+            }
+            i = j - 1; // Outer loop will increment i by 1, bringing it exactly to j
+        }
+        // [AI GENERATED END]
+        filtered_tokens.push(ProcToken {
             full: conj,
             base,
-            pos: format!("{:?}", pos),
-            tense: String::from("wip"),
+            pos: pos,
+            sub1,
+            // [AI GENERATED START]
+            conjugation: None, // TODO: Compute from consumed tokens
+            // [AI GENERATED END]
         });
         i += 1;
     }
@@ -455,6 +471,13 @@ impl Parser {
     }
 }
 
+pub fn analyze_sentence(text: &str) -> Vec<ProcToken> {
+    match PARSER.parse(text) {
+        Ok(tokens) => filter(&tokens),
+        Err(_) => Vec::new(),
+    }
+}
+
 pub fn grammar() {
     println!("Pick:\n 1. Saved Text\n 2. Input Text");
     let mut inp = String::new();
@@ -497,8 +520,8 @@ pub fn grammar() {
                 let filtered = filter(&result);
                 filtered.iter().for_each(|f| {
                     println!(
-                        "Full: {}, Base: {}, POS: {}, Tense: {}",
-                        f.full, f.base, f.pos, f.tense
+                        "Word: {}, Base: {}, POS: {:?}, Conjugation: {:?}",
+                        f.full, f.base, f.pos, f.conjugation
                     );
                 });
             }
