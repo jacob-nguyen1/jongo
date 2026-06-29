@@ -57,9 +57,10 @@ pub enum ClauseRelation {
     Continuation, // て
     Main,         // sentence-final
     Modifier,     // Relative clauses
+    Quotation,    // と after verb — embedded thought/speech
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ParticleRole {
     Subject,          // が — MarkingParticle, surface "が"
     Object,           // を — MarkingParticle, surface "を"
@@ -69,7 +70,10 @@ pub enum ParticleRole {
     LocationAction,   // で — MarkingParticle, surface "で" — default assignment, potentially wrong, needs verb rulebook to distinguish from Means
     Means,            // で — MarkingParticle, surface "で" — not yet distinguished from LocationAction, needs verb context
     Source,           // から — MarkingParticle, surface "から" — not yet distinguished from TemporalStart, needs noun type check
-    Limit,            // まで — AdverbialParticle, surface "まで" — not yet in assignment pass
+    Reason,           // から、ので — ConjunctiveParticle, acts as reason modifier
+    Limit,            // まで — AdverbialParticle, surface "まで" — spatial or temporal limit
+    Also,             // も — inclusive/additive, replaces が/を/は with "also/too" nuance
+    Ambiguous(Vec<ParticleRole>), // For particles whose roles cannot be determined structurally
 }
 
 fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
@@ -135,6 +139,16 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 i += 1;
             }
 
+            // Quotation "と" following a verb
+            ProcToken { pos: PartOfSpeech::Particle, full, .. } 
+                if full == "と" && chunks.len() > 1 && chunks[chunks.len() - 2].word.pos == PartOfSpeech::Verb => {
+                let to_chunk = chunks.pop().unwrap(); // Remove the `と`
+                let connective = Some(to_chunk.word);
+                clauses.push(Clause { chunks, relation: ClauseRelation::Quotation, connective });
+                chunks = Vec::new();
+                i += 1;
+            }
+
             // Standalone conjunctive particles
             // 雨が降っているので行きません。
             ProcToken { pos: PartOfSpeech::Particle, sub1: PartOfSpeechSubcategory1::ConjuctiveParticle, full, .. } => {
@@ -189,17 +203,18 @@ fn assign_particle_roles(clause: &mut Clause) {
                 if next_word.pos == PartOfSpeech::Particle &&
                    (next_word.sub1 == PartOfSpeechSubcategory1::MarkingParticle || 
                     next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle ||
-                    (next_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && next_word.full == "まで")) 
+                    (next_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && (next_word.full == "まで" || next_word.full == "も"))) 
                 {
                     chunk.particle_role = match next_word.full.as_str() {
                         "が" => Some(ParticleRole::Subject),
                         "を" => Some(ParticleRole::Object),
                         "は" => Some(ParticleRole::Topic),
-                        "に" => Some(ParticleRole::IndirectObject),
+                        "に" => Some(ParticleRole::Ambiguous(vec![ParticleRole::IndirectObject, ParticleRole::Destination])),
                         "へ" => Some(ParticleRole::Destination),
-                        "で" => Some(ParticleRole::LocationAction),
+                        "で" => Some(ParticleRole::Ambiguous(vec![ParticleRole::LocationAction, ParticleRole::Means])),
                         "から" => Some(ParticleRole::Source),
                         "まで" => Some(ParticleRole::Limit),
+                        "も" => Some(ParticleRole::Also),
                         _ => None, // Unmapped particle
                     };
                     chunk.particle = Some(next_word.clone());
@@ -235,10 +250,16 @@ impl Sentence {
                 
                 print!("    ├── Chunk: {}", chunk.word.full);
                 if let Some(particle) = &chunk.particle {
-                    print!(" {}", particle.full);
+                    print!(" + {}", particle.full);
                 }
                 if let Some(role) = &chunk.particle_role {
-                    print!(" [{:?}]", role);
+                    match role {
+                        ParticleRole::Ambiguous(candidates) => {
+                            let names: Vec<String> = candidates.iter().map(|c| format!("{:?}", c)).collect();
+                            print!(" [Ambiguous: {}]", names.join("/"));
+                        }
+                        _ => print!(" [{:?}]", role),
+                    }
                 }
                 println!();
                 
@@ -271,7 +292,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("大きい犬が走った。");
+        let tokens = analyze_sentence("私も映画を見た。");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
