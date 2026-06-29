@@ -61,19 +61,23 @@ pub enum ClauseRelation {
 
 #[derive(Debug)]
 pub enum ParticleRole {
-    Subject,          // が
-    Object,           // を
-    Topic,            // は
-    IndirectObject,   // に
-    Destination,      // に、へ
-    LocationAction,   // で
-    Means,            // で
-    Source,           // から (ambiguous with Reason)
-    Reason,           // から、ので (ambiguous with Source)
-    Limit,            // まで
+    Subject,          // が — MarkingParticle, surface "が"
+    Object,           // を — MarkingParticle, surface "を"
+    Topic,            // は — LinkingParticle, surface "は"
+    IndirectObject,   // に — MarkingParticle, surface "に" — default assignment, potentially wrong, needs verb rulebook to distinguish from Destination
+    Destination,      // に、へ — MarkingParticle, surface "に"/"へ" — not yet distinguished from IndirectObject, needs motion verb detection
+    LocationAction,   // で — MarkingParticle, surface "で" — default assignment, potentially wrong, needs verb rulebook to distinguish from Means
+    Means,            // で — MarkingParticle, surface "で" — not yet distinguished from LocationAction, needs verb context
+    Source,           // から — MarkingParticle, surface "から" — not yet distinguished from TemporalStart, needs noun type check
+    Limit,            // まで — AdverbialParticle, surface "まで" — not yet in assignment pass
 }
 
 fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
+    let tokens: Vec<ProcToken> = tokens
+        .into_iter()
+        .filter(|t| t.pos != PartOfSpeech::Symbol)
+        .collect();
+
     let mut clauses: Vec<Clause> = Vec::new();
     let mut chunks: Vec<Chunk> = Vec::new();
     let mut pending_modifiers: Vec<Modifier> = Vec::new();
@@ -106,20 +110,20 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 i += 1;
             }
 
-            // Relative clause: Verb immediately followed by Noun
-            ProcToken { pos: PartOfSpeech::Verb, .. } if next_pos == Some(PartOfSpeech::Noun) => {
-                let modifier_clause = Clause { chunks, relation: ClauseRelation::Modifier, connective: None };
-                pending_modifiers.push(Modifier::Clause(Box::new(modifier_clause)));
-                chunks = Vec::new();
-                i += 1;
-            }
-
             // === CLAUSE SEPARATION ===
 
             // te-form verb marks continuation
             // りんごを食べて水を飲んだ
             ProcToken { pos: PartOfSpeech::Verb, full, .. } if (full.ends_with("て") || full.ends_with("で")) && next_str != Some("は") && next_str != Some("も") => {
                 clauses.push(Clause { chunks, relation: ClauseRelation::Continuation, connective: None });
+                chunks = Vec::new();
+                i += 1;
+            }
+
+            // Relative clause: Verb immediately followed by Noun
+            ProcToken { pos: PartOfSpeech::Verb, .. } if next_pos == Some(PartOfSpeech::Noun) => {
+                let modifier_clause = Clause { chunks, relation: ClauseRelation::Modifier, connective: None };
+                pending_modifiers.push(Modifier::Clause(Box::new(modifier_clause)));
                 chunks = Vec::new();
                 i += 1;
             }
@@ -177,7 +181,8 @@ fn assign_particle_roles(clause: &mut Clause) {
                 let next_word = &next_chunk.word;
                 if next_word.pos == PartOfSpeech::Particle &&
                    (next_word.sub1 == PartOfSpeechSubcategory1::MarkingParticle || 
-                    next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle) 
+                    next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle ||
+                    (next_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && next_word.full == "まで")) 
                 {
                     chunk.particle_role = match next_word.full.as_str() {
                         "が" => Some(ParticleRole::Subject),
@@ -259,7 +264,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("『志賀寺上人の恋』は、三島由紀夫の短編小説");
+        let tokens = analyze_sentence("九時から五時まで働いた。");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
