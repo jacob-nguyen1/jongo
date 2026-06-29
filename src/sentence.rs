@@ -50,14 +50,14 @@ pub enum Modifier {
 
 #[derive(Debug)]
 pub enum ClauseRelation {
-    Reason,       // から、ので
-    Contrast,     // けど、が
+    Reason,       // から、ので — ConjunctiveParticle
+    Contrast,     // けど、が (ConjunctiveParticle が, not subject が) — FAILURE: が as contrast vs subject distinguished by Lindera sub1, but edge cases possible
     Concessive,   // のに
     Conditional,  // ば、たら
-    Continuation, // て
+    Continuation, // て — FAILURE: て + は/も skipped correctly, but long て chains may lose semantic boundaries
     Main,         // sentence-final
-    Modifier,     // Relative clauses
-    Quotation,    // と after verb — embedded thought/speech
+    Modifier,     // relative clause — FAILURE: stacked relative clauses on one noun deferred, only single modifier supported
+    Quotation,    // と after verb — FAILURE: nested quotation (reported speech within reported speech) not handled. Interjection quotes (「うん」と) have no predicate and may not parse correctly
 }
 
 #[derive(Debug, Clone)]
@@ -65,15 +65,16 @@ pub enum ParticleRole {
     Subject,          // が — MarkingParticle, surface "が"
     Object,           // を — MarkingParticle, surface "を"
     Topic,            // は — LinkingParticle, surface "は"
-    IndirectObject,   // に — MarkingParticle, surface "に" — default assignment, potentially wrong, needs verb rulebook to distinguish from Destination
-    Destination,      // に、へ — MarkingParticle, surface "に"/"へ" — not yet distinguished from IndirectObject, needs motion verb detection
-    LocationAction,   // で — MarkingParticle, surface "で" — default assignment, potentially wrong, needs verb rulebook to distinguish from Means
-    Means,            // で — MarkingParticle, surface "で" — not yet distinguished from LocationAction, needs verb context
-    Source,           // から — MarkingParticle, surface "から" — not yet distinguished from TemporalStart, needs noun type check
-    Reason,           // から、ので — ConjunctiveParticle, acts as reason modifier
-    Limit,            // まで — AdverbialParticle, surface "まで" — spatial or temporal limit
-    Also,             // も — inclusive/additive, replaces が/を/は with "also/too" nuance
-    Ambiguous(Vec<ParticleRole>), // For particles whose roles cannot be determined structurally
+    IndirectObject,   // に — default, FAILURE: needs verb rulebook to distinguish from Destination and passive agent (先生に叱られた)
+    Destination,      // に、へ — FAILURE: not yet distinguished from IndirectObject, needs motion verb detection (行く、来る、帰る etc.)
+    LocationAction,   // で — default, FAILURE: needs verb rulebook to distinguish from Means
+    Means,            // で — FAILURE: not yet distinguished from LocationAction, needs verb or noun context (電車で、バスで)
+    Source,           // から — MarkingParticle — FAILURE: not yet distinguished from TemporalStart, needs noun type check (時、日、年 etc.)
+    Limit,            // まで — AdverbialParticle — FAILURE: not yet distinguished from TemporalLimit, needs noun type check
+    Also,             // も — AdverbialParticle — FAILURE: にも、でも compound particles not handled, も after て-form (てもいい) not a particle role but may be incorrectly assigned
+    ComparisonBase,   // より — AdverbialParticle, surface "より" — FAILURE: formal "from" use (よりご連絡) will be incorrectly labeled as comparison. よりよい adverbial use directly before adjective may also mislabel
+    Accompaniment,    // と — noun + と context — FAILURE: listing vs accompaniment ambiguous without animacy detection (友達と vs ビデオと), deferred to LLM
+    Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
 
 fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
@@ -203,7 +204,7 @@ fn assign_particle_roles(clause: &mut Clause) {
                 if next_word.pos == PartOfSpeech::Particle &&
                    (next_word.sub1 == PartOfSpeechSubcategory1::MarkingParticle || 
                     next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle ||
-                    (next_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && (next_word.full == "まで" || next_word.full == "も"))) 
+                    (next_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && (next_word.full == "まで" || next_word.full == "も" || next_word.full == "より"))) 
                 {
                     chunk.particle_role = match next_word.full.as_str() {
                         "が" => Some(ParticleRole::Subject),
@@ -215,6 +216,7 @@ fn assign_particle_roles(clause: &mut Clause) {
                         "から" => Some(ParticleRole::Source),
                         "まで" => Some(ParticleRole::Limit),
                         "も" => Some(ParticleRole::Also),
+                        "より" => Some(ParticleRole::ComparisonBase),
                         _ => None, // Unmapped particle
                     };
                     chunk.particle = Some(next_word.clone());
@@ -292,7 +294,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("私も映画を見た。");
+        let tokens = analyze_sentence("電車よりバスのほうが安い。");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
