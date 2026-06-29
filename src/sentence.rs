@@ -100,6 +100,13 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         match current {
             // === MODIFIER DETECTION ===
             
+            // い-adjective modifier
+            ProcToken { pos: PartOfSpeech::Adjective, .. } if next_pos == Some(PartOfSpeech::Noun) => {
+                let adj_chunk = chunks.pop().unwrap();
+                pending_modifiers.push(Modifier::Adjective(adj_chunk.word));
+                i += 1;
+            }
+
             // "の" Particle linking two nouns
             ProcToken { pos: PartOfSpeech::Particle, sub1: PartOfSpeechSubcategory1::NormalizingParticle, .. } => {
                 let no_chunk = chunks.pop().unwrap(); // Remove the `の`
@@ -264,7 +271,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("九時から五時まで働いた。");
+        let tokens = analyze_sentence("大きい犬が走った。");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
