@@ -1,5 +1,6 @@
 pub mod grammar;
 pub mod jmdict;
+pub mod jmnedict;
 pub mod sentence;
 
 use std::cell::RefCell;
@@ -166,12 +167,22 @@ impl JongoController {
 
         let mut html = String::from("<button class='jong-close' style='position:absolute;top:4px;right:4px;background:red;color:white;border:none;cursor:pointer;padding:2px 6px'>✕</button>");
         for f in &results {
-            if let Some((kana, english_defs)) = crate::jmdict::lookup(&f.base, f.pos) {
+            let is_proper_noun = f.sub1 == crate::grammar::PartOfSpeechSubcategory1::ProperNoun;
+            if let Some(hit) = crate::jmdict::lookup_first_result(&f.base, f.pos, is_proper_noun) {
+                let type_hint = match hit.source {
+                    crate::jmdict::DictSource::JMnedict => {
+                        format!(" [{}]", hit.noun_type.label())
+                    }
+                    crate::jmdict::DictSource::JMdict => String::new(),
+                };
                 html.push_str(&format!(
                     "<div>
-                        <strong style='font-weight: bold;'>{}</strong> ({}) {} 
-                    </div>", 
-                    f.full, kana, english_defs.join(", ")
+                        <strong style='font-weight: bold;'>{}</strong> ({}) {}{}
+                    </div>",
+                    f.full,
+                    hit.kana,
+                    hit.glosses.join(", "),
+                    type_hint
                 ));
             } else {
                 html.push_str(&format!("{} - ?<br>", f.full));
