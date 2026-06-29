@@ -8,11 +8,21 @@ console_error_panic_hook = "0.1.7"
 jmdict = "2.0.0"
 lindera = { version = "3.0.7", features = ["embed-ipadic"] }
 phf = { version = "0.13.1", features = ["macros"] }
+postcard = { version = "1.1.1", features = ["alloc"] }
+serde = { version = "1.0.219", features = ["derive"] }
 wasm-bindgen = "0.2.123"
 web-sys = { version = "0.3.100", features = ["Window", "Document", "Element", "HtmlElement", "Node", "MouseEvent", "KeyboardEvent", "EventTarget", "console", "Range", "CaretPosition", "DomRect", "Selection", "NodeList", "CssStyleDeclaration"] }
 strum = "0.26"
 strum_macros = "0.26"
 
+[build-dependencies]
+flate2 = "1.1.2"
+postcard = { version = "1.1.1", features = ["alloc"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+sha2 = "0.10.9"
+tar = "0.4.44"
+ureq = { version = "3.0.12", features = ["rustls"] }
+
 [lib]
 crate-type = ["cdylib", "rlib"]
-jmdict = "2.0.0"
