@@ -6,7 +6,11 @@ use lindera::tokenizer::Tokenizer;
 use phf::phf_map;
 use std::sync::LazyLock;
 
-use crate::grammar::PartOfSpeech::Verb;
+use crate::grammar::Conjugations::PresentContinuous;
+
+// use crate::grammar::CForms::Continuative;
+// use crate::grammar::PartOfSpeech::Verb;
+// use crate::grammar::PartOfSpeechSubcategory1::ConjuctiveParticle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PartOfSpeech {
@@ -192,72 +196,7 @@ static POS_SUB3_MAP: phf::Map<&'static str, PartOfSpeechSubcategory3> = phf_map!
     "*" => PartOfSpeechSubcategory3::X,
 };
 
-enum AdjConjugations {
-    Garu,
-    Plain,
-    NounConnection,
-    ClassicalPlain,
-    GozaiConjunction,
-    DoubleConsonant,
-}
-
-static ADJ_CONJ_MAP: phf::Map<&'static str, AdjConjugations> = phf_map! {
-    "ガル接続" => AdjConjugations::Garu,
-    "基本形" => AdjConjugations::Plain,
-    "体言接続" => AdjConjugations::NounConnection,
-    "文語基本形" => AdjConjugations::ClassicalPlain,
-    "連用ゴザイ接続" => AdjConjugations::GozaiConjunction,
-    "基本形-促音便" => AdjConjugations::DoubleConsonant,
-};
-
-enum VerbConjugations {
-    ImperativeYo,
-    AReruConnection,
-    Plain,
-    ClassicalPlain,
-    NounConnection,
-    ContractedRuNNo,
-    AUConnection,
-    ContractedRaNNai,
-    ContractedRuNo,
-}
-
-static VERB_CONJ_MAP: phf::Map<&'static str, VerbConjugations> = phf_map! {
-    "命令ｙｏ" => VerbConjugations::ImperativeYo,
-    "未然レル接続" => VerbConjugations::AReruConnection,
-    "基本形" => VerbConjugations::Plain,
-    "文語基本形" => VerbConjugations::ClassicalPlain,
-    "体言接続" => VerbConjugations::NounConnection,
-    "体言接続特殊" => VerbConjugations::ContractedRuNNo,
-    "未然ウ接続" => VerbConjugations::AUConnection,
-    "未然特殊" => VerbConjugations::ContractedRaNNai,
-    "体言接続特殊２" => VerbConjugations::ContractedRuNo
-};
-
-enum AuxVerbConjugations {
-    ImperativeYo,
-    Garu,
-    Plain,
-    NounConnection,
-    ClassicalPlain,
-    GozaiConjunction,
-    ContractedRuNNo,
-    AUConnection,
-    ContractedRaNNai
-}
-
-static AUX_VERB_CONJ_MAP: phf::Map<&'static str, AuxVerbConjugations> = phf_map! {
-    "命令ｙｏ" => AuxVerbConjugations::ImperativeYo,
-    "ガル接続" => AuxVerbConjugations::Garu,
-    "基本形" => AuxVerbConjugations::Plain,
-    "体言接続" => AuxVerbConjugations::NounConnection,
-    "文語基本形" => AuxVerbConjugations::ClassicalPlain,
-    "連用ゴザイ接続" => AuxVerbConjugations::GozaiConjunction,
-    "体言接続特殊" => AuxVerbConjugations::ContractedRuNNo,
-    "未然ウ接続" => AuxVerbConjugations::AUConnection,
-    "未然特殊" => AuxVerbConjugations::ContractedRaNNai,
-};
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CTypes {
     AdjectiveAUODan,
     AdjectiveII,
@@ -284,9 +223,12 @@ enum CTypes {
     IrregularTai,
     IrregularNu,
     IrregularMaSu,
+    IrregularNai,
     ClassicalKi,
     ClassicalBeShi,
     ClassicalRu,
+    X,
+    ERR,
 }
 
 static C_TYPE_MAP: phf::Map<&'static str, CTypes> = phf_map! {
@@ -315,11 +257,60 @@ static C_TYPE_MAP: phf::Map<&'static str, CTypes> = phf_map! {
     "特殊・タイ" => CTypes::IrregularTai,
     "特殊・ヌ" => CTypes::IrregularNu,
     "特殊・マス" => CTypes::IrregularMaSu,
+    "特殊・ナイ" => CTypes::IrregularNai,
     "文語・キ" => CTypes::ClassicalKi,
     "文語・ベシ" => CTypes::ClassicalBeShi,
     "文語・ル" => CTypes::ClassicalRu,
+    "*" => CTypes::X,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CForms {
+    ImperativeYo,
+    AReruConnection,
+    Plain,
+    ClassicalPlain,
+    NounConnection,
+    ContractedRuNNo,
+    AUConnection,
+    ContractedRaNNai,
+    ContractedRuNo,
+    Garu,
+    GozaiConjunction,
+    DoubleConsonant,
+    Continuative,
+    Imperfective,
+    Continuative2,
+    X,
+    ERR,
+}
+
+static C_FORM_MAP: phf::Map<&'static str, CForms> = phf_map! {
+    "命令ｙｏ" => CForms::ImperativeYo,
+    "未然レル接続" => CForms::AReruConnection,
+    "基本形" => CForms::Plain,
+    "文語基本形" => CForms::ClassicalPlain,
+    "体言接続" => CForms::NounConnection,
+    "体言接続特殊" => CForms::ContractedRuNNo,
+    "未然ウ接続" => CForms::AUConnection,
+    "未然特殊" => CForms::ContractedRaNNai,
+    "体言接続特殊２" => CForms::ContractedRuNo,
+    "ガル接続" => CForms::Garu,
+    "連用ゴザイ接続" => CForms::GozaiConjunction,
+    "基本形-促音便" => CForms::DoubleConsonant,
+    "連用形" => CForms::Continuative,
+    "未然形" => CForms::Imperfective,
+    "連用タ接続" => CForms::Continuative,
+    "*" => CForms::X,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Conjugations {
+    NonPast,
+    PresentContinuous,
+    Past,
+    PastContinuous,
+}
 
 struct Token {
     surface: String,
@@ -329,13 +320,15 @@ struct Token {
     sub3: PartOfSpeechSubcategory3,
     detail: Vec<String>,
     base: String,
+    ctype: CTypes,
+    cform: CForms,
 }
-// [AI GENERATED START]
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConjugationFeatures {
-    pub is_negative: bool,
-    pub is_past: bool,
-    pub is_te_form: bool,
+    pub negative: bool,
+    pub past: bool,
+    pub continuous: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -346,7 +339,31 @@ pub struct ProcToken {
     pub sub1: PartOfSpeechSubcategory1,
     pub conjugation: Option<ConjugationFeatures>,
 }
-// [AI GENERATED END]
+
+impl ProcToken{
+    fn verbPrint(&self) -> String {
+        match &self.conjugation {
+            Some(conj) => {
+                let mut parts = Vec::new();
+                if conj.negative {
+                    parts.push("negative");
+                }
+                if conj.past {
+                    parts.push("past");
+                }
+                if conj.continuous {
+                    parts.push("continuous");
+                }
+                if parts.is_empty() {
+                    "none".to_string()
+                } else {
+                    parts.join(", ")
+                }
+            }
+            None => "none".to_string(),
+        }
+    }
+}
 
 fn filter(line: &[Token]) -> Vec<ProcToken> {
     let mut filtered_tokens: Vec<ProcToken> = Vec::new();
@@ -355,54 +372,56 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let token = line.get(i).unwrap();
         let pos = token.pos.clone();
         let base = token.base.clone();
-        let sub1 = token.sub1;
+        let sub1=token.sub1.clone();
         let mut conj = token.surface.clone();
-        // [AI GENERATED START]
-        let mut should_merge = false;
-        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
-            should_merge = true;
-        } else if i + 1 < line.len() {
-            let next_token = &line[i + 1];
-            if next_token.pos == PartOfSpeech::AuxiliaryVerb 
-               || next_token.sub1 == PartOfSpeechSubcategory1::Bound 
-               || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle 
-                   && (next_token.surface == "じゃ" || next_token.surface == "では"))
-            {
-                should_merge = true;
+        let mut negative=false;
+        let mut past=false;
+        let mut continuous=false;
+        if token.cform == CForms::Continuative {
+            let mut j=i;
+            j+=1;
+            while j<line.len() && (line[j].sub1==PartOfSpeechSubcategory1::ConjuctiveParticle || line[j].cform==CForms::Continuative){
+                continuous=true;
+                j+=1;
+            }
+            if j<line.len(){
+                past=(line[j].ctype==CTypes::IrregularTa);
             }
         }
-
-        if should_merge {
-            // Fixed Khan's off-by-one error that was deleting the token immediately following a merged verb
-            let mut j = i + 1;
-            while j < line.len()
-                && (line[j].pos == PartOfSpeech::AuxiliaryVerb
-                    || line[j].sub1 == PartOfSpeechSubcategory1::Bound
-                    || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
-                    || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
-                        && (line[j].surface == "て" || line[j].surface == "で"))
-                    || (line[j].sub1 == PartOfSpeechSubcategory1::AdverbialParticle
-                        && (line[j].surface == "じゃ" || line[j].surface == "では")))
+        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb){
+            i += 1;
+            while i < line.len()
+                && line[i].pos != PartOfSpeech::Symbol
+                && line[i].sub1 != PartOfSpeechSubcategory1::Unbound
             {
-                conj = conj + &line[j].surface;
-                j += 1;
+                conj = conj + &line[i].surface;
+                i+=1;
             }
-            i = j - 1; // Outer loop will increment i by 1, bringing it exactly to j
         }
-        // [AI GENERATED END]
+        else{
+            i+=1;
+        }
+        // let conjugation = match (past, continuous) {
+        //     (true, true) => Conjugations::PastContinuous,
+        //     (true, false) => Conjugations::Past,
+        //     (false, true) => Conjugations::PresentContinuous,
+        //     (false, false) => Conjugations::NonPast,
+        // };
         filtered_tokens.push(ProcToken {
             full: conj,
             base,
             pos: pos,
             sub1,
-            // [AI GENERATED START]
-            conjugation: None, // TODO: Compute from consumed tokens
-            // [AI GENERATED END]
+            conjugation: Some(ConjugationFeatures {
+                negative,
+                past,
+                continuous,
+            })
         });
-        i += 1;
     }
     filtered_tokens
 }
+
 struct Parser {
     tokenizer: Tokenizer,
 }
@@ -450,6 +469,18 @@ impl Parser {
                     .copied()
                     .unwrap_or(PartOfSpeechSubcategory3::ERR);
 
+                let ctype = details
+                    .get(4)
+                    .and_then(|k| C_TYPE_MAP.get(*k))
+                    .copied()
+                    .unwrap_or(CTypes::ERR);
+
+                let cform = details
+                    .get(5)
+                    .and_then(|k| C_FORM_MAP.get(*k))
+                    .copied()
+                    .unwrap_or(CForms::ERR);
+
                 let base = details
                     .get(6)
                     .map(|s| (*s).to_string())
@@ -463,6 +494,8 @@ impl Parser {
                     sub3: sub3,
                     detail: detail,
                     base: base,
+                    ctype: ctype,
+                    cform: cform,
                 }
             })
             .collect();
@@ -511,8 +544,8 @@ pub fn grammar() {
             "2" => {
                 result.iter().for_each(|t| {
                     println!(
-                        "{}, {:?}, {:?}, {:?}, {:?}, {:?}",
-                        t.surface, t.pos, t.sub1, t.sub2, t.sub3, t.base
+                        "{}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                        t.surface, t.pos, t.sub1, t.sub2, t.sub3, t.ctype, t.cform, t.base
                     );
                 });
             }
@@ -520,8 +553,8 @@ pub fn grammar() {
                 let filtered = filter(&result);
                 filtered.iter().for_each(|f| {
                     println!(
-                        "Word: {}, Base: {}, POS: {:?}, Conjugation: {:?}",
-                        f.full, f.base, f.pos, f.conjugation
+                        "Word: {}, Base: {}, POS: {:?}, Conjugation: {}",
+                        f.full, f.base, f.pos, f.verbPrint()
                     );
                 });
             }
