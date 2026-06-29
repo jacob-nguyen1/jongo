@@ -74,6 +74,10 @@ pub enum ParticleRole {
     Also,             // も — AdverbialParticle — FAILURE: にも、でも compound particles not handled, も after て-form (てもいい) not a particle role but may be incorrectly assigned
     ComparisonBase,   // より — AdverbialParticle, surface "より" — FAILURE: formal "from" use (よりご連絡) will be incorrectly labeled as comparison. よりよい adverbial use directly before adjective may also mislabel
     Accompaniment,    // と — noun + と context — FAILURE: listing vs accompaniment ambiguous without animacy detection (友達と vs ビデオと), deferred to LLM
+    Temporal,         // に — time context (3時に)
+    Purpose,          // に — verbal noun context (買い物に行く)
+    Agent,            // に — passive/causative actor (先生に叱られた)
+    Adverbial,        // に — na-adjective stem context (静かに)
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
 
@@ -210,7 +214,14 @@ fn assign_particle_roles(clause: &mut Clause) {
                         "が" => Some(ParticleRole::Subject),
                         "を" => Some(ParticleRole::Object),
                         "は" => Some(ParticleRole::Topic),
-                        "に" => Some(ParticleRole::Ambiguous(vec![ParticleRole::IndirectObject, ParticleRole::Destination])),
+                        "に" => Some(ParticleRole::Ambiguous(vec![
+                            ParticleRole::IndirectObject, 
+                            ParticleRole::Destination,
+                            ParticleRole::Temporal,
+                            ParticleRole::Purpose,
+                            ParticleRole::Agent,
+                            ParticleRole::Adverbial
+                        ])),
                         "へ" => Some(ParticleRole::Destination),
                         "で" => Some(ParticleRole::Ambiguous(vec![ParticleRole::LocationAction, ParticleRole::Means])),
                         "から" => Some(ParticleRole::Source),
