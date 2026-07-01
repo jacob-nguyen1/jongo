@@ -233,7 +233,6 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         } else if i + 1 < line.len() {
             let next_token = &line[i + 1];
             if next_token.pos == PartOfSpeech::AuxiliaryVerb 
-               || next_token.sub1 == PartOfSpeechSubcategory1::Bound 
                || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle 
                    && (next_token.surface == "じゃ" || next_token.surface == "では"))
             {
@@ -246,7 +245,6 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             let mut j = i + 1;
             while j < line.len()
                 && (line[j].pos == PartOfSpeech::AuxiliaryVerb
-                    || line[j].sub1 == PartOfSpeechSubcategory1::Bound
                     || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
                     || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
                         && (line[j].surface == "て" || line[j].surface == "で"))

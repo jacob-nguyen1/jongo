@@ -50,34 +50,34 @@ pub enum Modifier {
 
 #[derive(Debug)]
 pub enum ClauseRelation {
-    Reason,       // から、ので — ConjunctiveParticle
-    Contrast,     // けど、が (ConjunctiveParticle が, not subject が) — FAILURE: が as contrast vs subject distinguished by Lindera sub1, but edge cases possible
+    Reason,       // から、ので (ConjunctiveParticle)
+    Contrast,     // けど、が (ConjunctiveParticle)
     Concessive,   // のに
     Conditional,  // ば、たら
-    Continuation, // て — FAILURE: て + は/も skipped correctly, but long て chains may lose semantic boundaries
+    Continuation, // て
     Main,         // sentence-final
-    Modifier,     // relative clause — FAILURE: stacked relative clauses on one noun deferred, only single modifier supported
-    Quotation,    // と after verb — FAILURE: nested quotation (reported speech within reported speech) not handled. Interjection quotes (「うん」と) have no predicate and may not parse correctly
+    Modifier,     // relative clause
+    Quotation,    // と after verb
 }
 
 #[derive(Debug, Clone)]
 pub enum ParticleRole {
-    Subject,          // が — MarkingParticle, surface "が"
-    Object,           // を — MarkingParticle, surface "を"
-    Topic,            // は — LinkingParticle, surface "は"
-    IndirectObject,   // に — default, FAILURE: needs verb rulebook to distinguish from Destination and passive agent (先生に叱られた)
-    Destination,      // に、へ — FAILURE: not yet distinguished from IndirectObject, needs motion verb detection (行く、来る、帰る etc.)
-    LocationAction,   // で — default, FAILURE: needs verb rulebook to distinguish from Means
-    Means,            // で — FAILURE: not yet distinguished from LocationAction, needs verb or noun context (電車で、バスで)
-    Source,           // から — MarkingParticle — FAILURE: not yet distinguished from TemporalStart, needs noun type check (時、日、年 etc.)
-    Limit,            // まで — AdverbialParticle — FAILURE: not yet distinguished from TemporalLimit, needs noun type check
-    Also,             // も — AdverbialParticle — FAILURE: にも、でも compound particles not handled, も after て-form (てもいい) not a particle role but may be incorrectly assigned
-    ComparisonBase,   // より — AdverbialParticle, surface "より" — FAILURE: formal "from" use (よりご連絡) will be incorrectly labeled as comparison. よりよい adverbial use directly before adjective may also mislabel
-    Accompaniment,    // と — noun + と context — FAILURE: listing vs accompaniment ambiguous without animacy detection (友達と vs ビデオと), deferred to LLM
-    Temporal,         // に — time context (3時に)
-    Purpose,          // に — verbal noun context (買い物に行く)
-    Agent,            // に — passive/causative actor (先生に叱られた)
-    Adverbial,        // に — na-adjective stem context (静かに)
+    Subject,          // が
+    Object,           // を
+    Topic,            // は
+    IndirectObject,   // に (default)
+    Destination,      // に、へ
+    LocationAction,   // で (default)
+    Means,            // で
+    Source,           // から
+    Limit,            // まで
+    Also,             // も
+    ComparisonBase,   // より
+    Accompaniment,    // と
+    Temporal,         // に
+    Purpose,          // に
+    Agent,            // に
+    Adverbial,        // に
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
 
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("電車よりバスのほうが安い。");
+        let tokens = analyze_sentence("国土交通省は、列車が120ｍぐらい走ったところで、2つ目と3つ目の車両が線路から外れたと言っています。");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
