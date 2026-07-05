@@ -136,8 +136,8 @@ static POS_SUB1_MAP: phf::Map<&'static str, PartOfSpeechSubcategory1> = phf_map!
     "*" => PartOfSpeechSubcategory1::X,
 };
 
-#[derive(Debug, Clone, Copy)]
-enum PartOfSpeechSubcategory2 {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartOfSpeechSubcategory2 {
     General,
     Name,
     Organization,
@@ -213,6 +213,7 @@ pub struct ProcToken {
     pub base: String,
     pub pos: PartOfSpeech,
     pub sub1: PartOfSpeechSubcategory1,
+    pub sub2: PartOfSpeechSubcategory2,
     pub conjugation: Option<ConjugationFeatures>,
 }
 // [AI GENERATED END]
@@ -225,6 +226,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let pos = token.pos.clone();
         let base = token.base.clone();
         let sub1 = token.sub1;
+        let sub2 = token.sub2;
         let mut conj = token.surface.clone();
         // [AI GENERATED START]
         let mut should_merge = false;
@@ -262,6 +264,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             base,
             pos: pos,
             sub1,
+            sub2,
             // [AI GENERATED START]
             conjugation: None, // TODO: Compute from consumed tokens
             // [AI GENERATED END]
@@ -401,6 +404,69 @@ pub fn grammar() {
             }
             "5" => break,
             _ => println!("\nInvalid option. Please try again.\n"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dumps raw Lindera tokenization for a batch of sentences.
+    /// Run with: cargo test --lib grammar::tests::lindera_raw -- --nocapture
+    #[test]
+    fn lindera_raw() {
+        let sentences = vec![
+            // Adverbial に (na-adj stem)
+            "静かに歩く",           // walk quietly
+            "綺麗に掃除した",       // cleaned beautifully
+            // Agent に (passive)
+            "先生に叱られた",       // was scolded by teacher
+            "犬に噛まれた",         // was bitten by dog
+            // Destination に (motion verb)
+            "東京に行く",           // go to Tokyo
+            "学校に帰る",           // return to school
+            // IndirectObject に (ditransitive)
+            "友達に本をあげた",     // gave a book to friend
+            "母に手紙を書いた",     // wrote a letter to mother
+            // Temporal に (time expression)
+            "三時に起きた",         // woke up at 3
+            "月曜日に会う",         // meet on Monday
+            "夏に泳ぐ",             // swim in summer
+            // Purpose に (suru verb + motion)
+            "買い物に行く",         // go shopping
+            "旅行に出かけた",       // set out on a trip
+        ];
+
+        for sentence in sentences {
+            println!("\n=== {} ===", sentence);
+            let tokens = PARSER.parse(sentence).unwrap();
+            for t in &tokens {
+                println!(
+                    "  {}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                    t.surface, t.pos, t.sub1, t.sub2, t.sub3, t.base
+                );
+            }
+        }
+    }
+
+    /// Dumps filtered ProcToken output for a batch of sentences.
+    /// Run with: cargo test --lib grammar::tests::filtered -- --nocapture
+    #[test]
+    fn filtered() {
+        let sentences = vec![
+            "静かに歩く",
+        ];
+
+        for sentence in sentences {
+            println!("\n=== {} ===", sentence);
+            let tokens = analyze_sentence(sentence);
+            for t in &tokens {
+                println!(
+                    "  {}, base={}, pos={:?}, sub1={:?}, sub2={:?}",
+                    t.full, t.base, t.pos, t.sub1, t.sub2
+                );
+            }
         }
     }
 }

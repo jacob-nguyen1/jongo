@@ -1,12 +1,64 @@
-# Jongo Parser — Known Failures & TODOs
+# Jongo — Master TODO
+
+## Extension UI (lib.rs)
+
+### Current State
+- WASM browser extension injected via content script
+- Shift+hover detects sentence boundaries, shows "jong" prompt button
+- Clicking "jong" opens a flat word-by-word gloss (token, kana, definitions)
+- No clause structure, no particle roles, no hover interaction in the analysis window
+
+### Primary View Mode (Build First)
+The analysis window should present the parsed sentence as a **clause-segmented, interactive breakdown**.
+
+**Layout:**
+- Analysis window opens near the original text (current popup positioning is fine)
+- Top of window: the full sentence, re-rendered with **clause boundaries** visually marked (color bands, subtle dividers, or background tints per clause)
+- Below: clause-by-clause breakdown, each clause as a collapsible section showing its chunks
+
+**Per-Clause Display:**
+- Clause relation label visible (Reason, Contrast, Continuation, etc.)
+- Connective particle shown at the clause boundary (けど, から, て, etc.)
+- Each chunk displayed as a unit: word + particle + role badge (e.g. `友達 が [Subject]`)
+- Modifiers (adjective, limitation, relative clause) indented or nested under their head chunk
+- Definitions: each word shows reading (kana) and English gloss inline or on hover
+
+**Hover Interaction:**
+- Hovering a word in the analysis window highlights the corresponding text in the original page
+- Hovering a word in the analysis window also highlights its structural relationships:
+  - The chunk it belongs to
+  - The clause it belongs to
+  - Its modifier attachments (if any)
+- Shift+hover on original page text could highlight the corresponding chunk in the analysis window (bidirectional)
+
+**Word Detail (on hover or click):**
+- Reading (kana)
+- Dictionary form (base)
+- Part of speech
+- English definition(s) from JMdict
+- Particle role (if chunk has a particle)
+- Conjugation info (negative, past, te-form) when ConjugationFeatures are populated (G3)
+
+### Future View Modes (Deferred)
+- **Minimal mode:** Just clause-colored original text with hover glosses, no analysis panel
+- **Tree mode:** Full AST tree visualization (modifier nesting, clause hierarchy)
+- **Comparison mode:** Side-by-side original vs structural breakdown
+
+### Implementation Notes
+- `analyze()` in lib.rs currently calls `grammar::analyze_sentence()` directly. It needs to call the sentence parser (`sentence::build_sentence()`) instead, and render the `Sentence` AST into HTML.
+- The `Sentence` struct needs a `to_html()` or similar method, or lib.rs builds HTML by walking the AST.
+- Clause colors should be deterministic per relation type (e.g. Reason=blue, Contrast=orange, Main=neutral).
+- Hover state management: track which chunk/clause is hovered, apply CSS classes to both analysis window elements and original page text spans.
+- Original text needs to be wrapped in spans (per-token or per-chunk) during sentence detection so hover highlighting can target them.
+
+---
+
 
 ## sentence.rs
 
 ### Actionable Fixes
-- **[F1] Te-form predicate chain split:** `買ってくれた` splits incorrectly. **Fix:** Add word bank guard (`くれる、もらう、あげる、いる、しまう、おく、みる、いく、くる、ある`). Keep tokens separate in `grammar.rs`.
 - **[F2] Eager modifier attachment:** Modifier attaches to wrong noun (e.g. `東京` instead of `電車`). **Fix:** Add `is_head: bool` (default `true`) to `Chunk`. When `の` captures a noun, mark it `is_head: false`. Skip non-head chunks in modifier attachment.
 - **[F3] `の` pops wrong chunk:** For Noun+Particle+の (e.g. `東京からの`), `の` pops `から` and orphans `東京`. **Fix:** If preceding chunk is a particle, keep popping until reaching a noun. Store particle on the noun chunk.
-- **[F4] Copular quotation not detected:** `便利だ+と` doesn't trigger Quotation. **Fix:** Check if `と` is tagged `MarkingParticle, Quotation` instead of checking preceding POS.
 - **[F6] Sentence-final explanatory `の`:** Dangles as standalone chunk. **Fix:** Lindera tags as `EndingParticle`. Handle at clause level with `ending_particle: Option<ProcToken>`. (Hardcode list: の, ね, よ, わ, な).
 - **[F7] Limitation print gap:** Nested modifiers in `Limitation` chunk don't print. **Fix:** Recurse into limitation chunk's modifiers in `Sentence::print()`.
 

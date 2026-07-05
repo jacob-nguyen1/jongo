@@ -1,4 +1,4 @@
-use crate::grammar::{analyze_sentence, ProcToken, PartOfSpeech, PartOfSpeechSubcategory1};
+use crate::grammar::{analyze_sentence, ProcToken, PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2};
 
 pub struct Sentence {
     pub clauses: Vec<Clause>,
@@ -130,7 +130,16 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
 
             // te-form verb marks continuation
             // りんごを食べて水を飲んだ
-            ProcToken { pos: PartOfSpeech::Verb, full, .. } if (full.ends_with("て") || full.ends_with("で")) && next_str != Some("は") && next_str != Some("も") => {
+            ProcToken { pos: PartOfSpeech::Verb, full, .. }
+                if (full.ends_with("て") || full.ends_with("で"))
+                && next_str != Some("は")
+                && next_str != Some("も")
+                && !matches!(
+                    next_token.map(|t| t.base.as_str()),
+                    Some("くれる" | "もらう" | "あげる" | "いる"
+                       | "しまう" | "おく" | "みる" | "いく"
+                       | "くる" | "ある")
+                ) => {
                 clauses.push(Clause { chunks, relation: ClauseRelation::Continuation, connective: None });
                 chunks = Vec::new();
                 i += 1;
@@ -144,10 +153,9 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 i += 1;
             }
 
-            // Quotation "と" following a verb
-            ProcToken { pos: PartOfSpeech::Particle, full, .. } 
-                if full == "と" && chunks.len() > 1 && chunks[chunks.len() - 2].word.pos == PartOfSpeech::Verb => {
-                let to_chunk = chunks.pop().unwrap(); // Remove the `と`
+            // Quotation と — Lindera reliably tags as sub2 == Quotation
+            ProcToken { pos: PartOfSpeech::Particle, sub2: PartOfSpeechSubcategory2::Quotation, .. } => {
+                let to_chunk = chunks.pop().unwrap(); // Remove the と
                 let connective = Some(to_chunk.word);
                 clauses.push(Clause { chunks, relation: ClauseRelation::Quotation, connective });
                 chunks = Vec::new();
@@ -161,7 +169,7 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                     "から" | "ので" => ClauseRelation::Reason,
                     "けど" | "が" => ClauseRelation::Contrast,
                     "のに" => ClauseRelation::Concessive,
-                    "ば" | "たら" => ClauseRelation::Conditional,
+                    "ば" | "たら" | "と" => ClauseRelation::Conditional,
                     _ => ClauseRelation::Main,
                 };
                 let connective = chunks.pop().map(|c| c.word);
@@ -305,7 +313,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let tokens = analyze_sentence("国土交通省は、列車が120ｍぐらい走ったところで、2つ目と3つ目の車両が線路から外れたと言っています。");
+        let tokens = analyze_sentence("春になると桜が咲くから、友達が綺麗だと言った");
         let sentence = build_sentence(tokens).unwrap();
         sentence.print();
     }
