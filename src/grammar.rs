@@ -417,25 +417,16 @@ mod tests {
     #[test]
     fn lindera_raw() {
         let sentences = vec![
-            // Adverbial に (na-adj stem)
-            "静かに歩く",           // walk quietly
-            "綺麗に掃除した",       // cleaned beautifully
-            // Agent に (passive)
-            "先生に叱られた",       // was scolded by teacher
-            "犬に噛まれた",         // was bitten by dog
-            // Destination に (motion verb)
-            "東京に行く",           // go to Tokyo
-            "学校に帰る",           // return to school
-            // IndirectObject に (ditransitive)
-            "友達に本をあげた",     // gave a book to friend
-            "母に手紙を書いた",     // wrote a letter to mother
-            // Temporal に (time expression)
-            "三時に起きた",         // woke up at 3
-            "月曜日に会う",         // meet on Monday
-            "夏に泳ぐ",             // swim in summer
-            // Purpose に (suru verb + motion)
-            "買い物に行く",         // go shopping
-            "旅行に出かけた",       // set out on a trip
+            // LocationAction で
+            "公園で遊ぶ",           // play at the park
+            "学校で勉強する",       // study at school
+            "東京で働く",           // work in Tokyo
+            // Means で
+            "バスで行く",           // go by bus
+            "箸で食べる",           // eat with chopsticks
+            "ペンで書く",           // write with a pen
+            // Ambiguous
+            "電車で食べた",         // ate on the train? ate by means of train?
         ];
 
         for sentence in sentences {

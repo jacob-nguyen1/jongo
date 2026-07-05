@@ -57,10 +57,12 @@ The analysis window should present the parsed sentence as a **clause-segmented, 
 ## sentence.rs
 
 ### Actionable Fixes
-- **[F2] Eager modifier attachment:** Modifier attaches to wrong noun (e.g. `東京` instead of `電車`). **Fix:** Add `is_head: bool` (default `true`) to `Chunk`. When `の` captures a noun, mark it `is_head: false`. Skip non-head chunks in modifier attachment.
-- **[F3] `の` pops wrong chunk:** For Noun+Particle+の (e.g. `東京からの`), `の` pops `から` and orphans `東京`. **Fix:** If preceding chunk is a particle, keep popping until reaching a noun. Store particle on the noun chunk.
-- **[F6] Sentence-final explanatory `の`:** Dangles as standalone chunk. **Fix:** Lindera tags as `EndingParticle`. Handle at clause level with `ending_particle: Option<ProcToken>`. (Hardcode list: の, ね, よ, わ, な).
-- **[F7] Limitation print gap:** Nested modifiers in `Limitation` chunk don't print. **Fix:** Recurse into limitation chunk's modifiers in `Sentence::print()`.
+- ~~**[F2] Eager modifier attachment:** ✅ Fixed. Eager modifiers (Adjectives, Clauses) attached to non-head nouns (captured by `の`) are extracted and bubbled up to the true head noun.~~
+- ~~**[F3] `の` pops wrong chunk:** ✅ Fixed. `の` now pops past particles to find the noun. Particle stored on the noun chunk.~~
+- ~~**[F6] Sentence-final ending particles:** ✅ Fixed. `ending_particles: Vec<ProcToken>` on `Clause`. EndingParticle tokens collected instead of becoming standalone chunks.~~
+- ~~**[F7] Limitation print gap:** ✅ Fixed. `print()` now recurses into limitation chunk modifiers.~~
+- **[F8] Double marking particles (`には`, `では`):** `assign_particle_roles` only absorbs one particle per noun. `には` = に role + は topicalization. `では` = で role + は topicalization. **Fix:** After absorbing the first particle, peek for は/も as a second particle. Add `is_topicalized: bool` to `Chunk` (or similar).
+- **[F9] Stacked ending particles (`のよ`, `のね`):** Lindera tags の as `Noun, Bound` (nominalizer) when followed by another ending particle. Verb+Noun rule fires and treats の as a relative clause head. **Fix:** After Verb+Noun relative clause detection, check if the "noun" is Bound の and the token after it is EndingParticle or end of sentence — if so, treat の as an ending particle, not a nominalizer.
 
 ### Deferred & Ambiguities (LLM / Future Rules)
 - **Compound particles:** Hardcode particles like `でも` as individual `ParticleRole` variants. Merge in `grammar.rs`.
@@ -74,7 +76,8 @@ The analysis window should present the parsed sentence as a **clause-segmented, 
   - `Source` (`から`) vs `TemporalStart` (needs noun type check)
   - `Limit` (`まで`) vs `TemporalLimit` (needs noun type check)
   - `Accompaniment` (`と`) vs `Listing` (`と`) (needs animacy detection)
-  - `Destination` (`へ/に`) vs `IndirectObject` (`に`) vs `Agent` (`に`)
+  - `Destination` (`に`) vs `IndirectObject` (`に`) — indistinguishable from Lindera
+- **Agent `に` detection:** Re-add Agent to に candidates when clause predicate is passive. Blocked on ConjugationFeatures gaining `is_passive`. Passive morphology (れる/られる) is merged into verb surface by grammar.rs, making string-matching unreliable (e.g. 忘れた false positive).
 - **Formal `より` ("from"):** Identical to comparison `より`, mislabeled as comparison. Low priority.
 
 ## grammar.rs
@@ -86,13 +89,14 @@ The analysis window should present the parsed sentence as a **clause-segmented, 
 - **[G3] ConjugationFeatures:** Populate `is_negative`, `is_past`, `is_te_form` as tokens merge. `sentence.rs` will later check `token.conjugation.is_te_form`.
 
 ## Particle Ambiguity Findings (に, で, より, から)
-- **に (Ni):** 6-way ambiguous (`MarkingParticle, General`). Defer all resolution to LLM.
+- **に (Ni):** Adverbial に is `AdverbializingParticle` (separate from MarkingParticle, never enters ambiguity). Agent requires passive predicate detection (blocked on ConjugationFeatures). Remaining 4-way ambiguity (IndirectObject/Destination/Temporal/Purpose) deferred to LLM.
 - **で (De):** Conjunctive で (`親切で`) is `AuxiliaryVerb` (だ), not a particle. No collision with LocationAction/Means.
 - **より (Yori):** Adverbial (`Adverb, General`) and Comparison (`Particle, MarkingParticle, General`) are distinct. Formal ("from") matches comparison.
 - **から (Kara):** Temporal vs. Spatial is unresolvable (`Particle, MarkingParticle, General`). Defer to LLM.
 
 ## Lindera Subcategory Findings
-- **と:** `MarkingParticle, Quotation` (Quotation), `MarkingParticle, General` (Accompaniment), `CoordinatingParticle` (Listing).
+- **と:** `MarkingParticle, Quotation` (Quotation), `MarkingParticle, General` (Accompaniment), `CoordinatingParticle` (Listing), `ConjunctiveParticle` (Conditional).
+- **に:** `AdverbializingParticle` (Adverbial, e.g. 静かに), `MarkingParticle, General` (all other roles).
 - **の, ね, よ, わ, な:** `EndingParticle` (Sentence-final).
 - **の:** `Noun, Bound` (Nominalizing), `NormalizingParticle` (Structural).
 - **は:** `LinkingParticle` (Topic).
