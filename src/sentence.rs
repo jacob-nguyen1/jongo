@@ -57,6 +57,9 @@ pub enum ClauseRelation {
     Concessive,   // のに
     Conditional,  // ば、たら
     Continuation, // て
+    Sequence,     // てから
+    Simultaneous, // ながら
+    Until,        // まで after verb
     Main,         // sentence-final
     Modifier,     // relative clause
     Quotation,    // と after verb
@@ -83,7 +86,7 @@ pub enum ParticleRole {
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
 
-fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
+pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
     let tokens: Vec<ProcToken> = tokens
         .into_iter()
         .filter(|t| t.pos != PartOfSpeech::Symbol)
@@ -113,19 +116,75 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         match current {
             // === MODIFIER DETECTION ===
             
+            // Adjective て-form Continuation split
+            ProcToken { pos: PartOfSpeech::Adjective, full, .. }
+                if full.ends_with("て") || full.ends_with("で") => {
+                clauses.push(Clause {
+                    chunks,
+                    relation: ClauseRelation::Continuation,
+                    connective: None,
+                    ending_particles: std::mem::take(&mut pending_ending_particles),
+                });
+                chunks = Vec::new();
+                i += 1;
+            }
+
             // い-adjective modifier
             ProcToken { pos: PartOfSpeech::Adjective, .. } if next_pos == Some(PartOfSpeech::Noun) => {
-                let adj_chunk = chunks.pop().unwrap();
+                let mut adj_chunk = chunks.pop().unwrap();
+                // Bubble up any modifiers that accidentally attached to the adjective
+                let extracted = std::mem::take(&mut adj_chunk.modifiers);
+                pending_modifiers.extend(extracted);
                 pending_modifiers.push(Modifier::Adjective(adj_chunk.word));
                 i += 1;
             }
 
+            // な-adjective modifier (e.g. 好きな + 料理)
+            // Lindera tags the stem as Noun/AdjectiveVerbStem, and grammar.rs merges the 'な' auxiliary into it.
+            ProcToken { pos: PartOfSpeech::Noun, sub1: PartOfSpeechSubcategory1::AdjectiveVerbStem, .. } 
+                if current.full.ends_with("な") && next_pos == Some(PartOfSpeech::Noun) => {
+                // If it's the ending 'の', we shouldn't trigger the modifier rule.
+                let next = tokens.get(i + 1).unwrap();
+                let is_ending_no = next.full == "の" && match tokens.get(i + 2) {
+                    Some(n2) => n2.sub1 == PartOfSpeechSubcategory1::EndingParticle 
+                             || n2.sub2 == PartOfSpeechSubcategory2::Quotation
+                             || n2.full == "に",
+                    None => true,
+                };
+                
+                if !is_ending_no {
+                    let mut adj_chunk = chunks.pop().unwrap();
+                    let extracted = std::mem::take(&mut adj_chunk.modifiers);
+                    pending_modifiers.extend(extracted);
+                    pending_modifiers.push(Modifier::Adjective(adj_chunk.word));
+                }
+                i += 1;
+            }
+
+            // のに concessive clause split
+            ProcToken { pos: PartOfSpeech::Noun, sub1: PartOfSpeechSubcategory1::Bound, full, .. }
+                if full == "の" && next_str == Some("に") => {
+                let no_chunk = chunks.pop().unwrap();
+                let ni_token = tokens.get(i + 1).unwrap().clone();
+                let mut connective_token = no_chunk.word;
+                connective_token.full = format!("{}に", connective_token.full); // combine into "のに"
+                clauses.push(Clause {
+                    chunks,
+                    relation: ClauseRelation::Concessive,
+                    connective: Some(connective_token),
+                    ending_particles: std::mem::take(&mut pending_ending_particles),
+                });
+                chunks = Vec::new();
+                i += 2;
+            }
+
             // "の" Particle linking two nouns
             ProcToken { pos: PartOfSpeech::Particle, sub1: PartOfSpeechSubcategory1::NormalizingParticle, .. } => {
-                chunks.pop(); // Remove the `の` chunk
+                let no_chunk = chunks.pop().unwrap(); // Remove the `の` chunk
                 if let Some(prev_chunk) = chunks.pop() {
                     let mut lim_chunk = if prev_chunk.word.pos == PartOfSpeech::Particle {
-                        let particle_token = prev_chunk.word;
+                        let mut particle_token = prev_chunk.word;
+                        particle_token.full.push_str(&no_chunk.word.full);
                         if let Some(mut noun_chunk) = chunks.pop() {
                             noun_chunk.particle = Some(particle_token);
                             noun_chunk
@@ -133,10 +192,16 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                             Chunk { word: particle_token, particle: None, particle_role: None, modifiers: Vec::new(), is_head: true }
                         }
                     } else {
+                        let mut prev_chunk = prev_chunk;
+                        prev_chunk.particle = Some(no_chunk.word);
                         prev_chunk
                     };
                     lim_chunk.is_head = false;
-                    
+
+                    // F2: Skip non-head chunks in modifier attachment (bubble up to the real head)
+                    // We currently partition: eager modifiers (Adjectives, Clauses) bubble up,
+                    // but Limitation modifiers stay nested. This is a temporary structural default
+                    // pending a larger architectural decision on attachment ambiguity.
                     let (eager, nested): (Vec<_>, Vec<_>) = lim_chunk.modifiers.into_iter().partition(|m| {
                         matches!(m, Modifier::Adjective(_) | Modifier::Clause(_))
                     });
@@ -162,16 +227,50 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                        | "しまう" | "おく" | "みる" | "いく"
                        | "くる" | "ある")
                 ) => {
-                clauses.push(Clause { chunks, relation: ClauseRelation::Continuation, connective: None, ending_particles: std::mem::take(&mut pending_ending_particles) });
+                
+                let mut relation = ClauseRelation::Continuation;
+                let connective = if next_str == Some("から") {
+                    let kara = tokens.get(i + 1).unwrap().clone();
+                    i += 1; // Skip the "から" token in the main loop
+                    relation = ClauseRelation::Sequence;
+                    Some(kara)
+                } else {
+                    None
+                };
+
+                clauses.push(Clause { chunks, relation, connective, ending_particles: std::mem::take(&mut pending_ending_particles) });
                 chunks = Vec::new();
                 i += 1;
             }
 
+            // Vるまで clause split
+            ProcToken { pos: PartOfSpeech::Verb, .. } if next_str == Some("まで") => {
+                let made_token = tokens.get(i + 1).unwrap().clone();
+                clauses.push(Clause {
+                    chunks,
+                    relation: ClauseRelation::Until,
+                    connective: Some(made_token),
+                    ending_particles: std::mem::take(&mut pending_ending_particles),
+                });
+                chunks = Vec::new();
+                i += 2;
+            }
+
             // Relative clause: Verb immediately followed by Noun
             ProcToken { pos: PartOfSpeech::Verb, .. } if next_pos == Some(PartOfSpeech::Noun) => {
-                let modifier_clause = Clause { chunks, relation: ClauseRelation::Modifier, connective: None, ending_particles: Vec::new() };
-                pending_modifiers.push(Modifier::Clause(Box::new(modifier_clause)));
-                chunks = Vec::new();
+                let next = tokens.get(i + 1).unwrap();
+                let is_ending_no = next.full == "の" && match tokens.get(i + 2) {
+                    Some(n2) => n2.sub1 == PartOfSpeechSubcategory1::EndingParticle 
+                             || n2.sub2 == PartOfSpeechSubcategory2::Quotation
+                             || n2.full == "に", // Prevent relative clause split for のに
+                    None => true,
+                };
+                
+                if !is_ending_no {
+                    let modifier_clause = Clause { chunks, relation: ClauseRelation::Modifier, connective: None, ending_particles: Vec::new() };
+                    pending_modifiers.push(Modifier::Clause(Box::new(modifier_clause)));
+                    chunks = Vec::new();
+                }
                 i += 1;
             }
 
@@ -192,6 +291,7 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                     "けど" | "が" => ClauseRelation::Contrast,
                     "のに" => ClauseRelation::Concessive,
                     "ば" | "たら" | "と" => ClauseRelation::Conditional,
+                    "ながら" => ClauseRelation::Simultaneous,
                     _ => ClauseRelation::Main,
                 };
                 let connective = chunks.pop().map(|c| c.word);
@@ -206,13 +306,26 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 i += 1;
             }
 
+            // F9: "の" tagged as Noun but acting as an ending particle
+            ProcToken { pos: PartOfSpeech::Noun, .. } if current.full == "の" => {
+                let is_ending_no = match tokens.get(i + 1) {
+                    Some(n1) => n1.sub1 == PartOfSpeechSubcategory1::EndingParticle || n1.sub2 == PartOfSpeechSubcategory2::Quotation,
+                    None => true,
+                };
+                if is_ending_no {
+                    let ep_chunk = chunks.pop().unwrap();
+                    pending_ending_particles.push(ep_chunk.word);
+                }
+                i += 1;
+            }
+
             _ => { 
                 i += 1; 
             }
         }
     }
 
-    if !chunks.is_empty() {
+    if !chunks.is_empty() || !pending_ending_particles.is_empty() {
         clauses.push(Clause {
             chunks: chunks,
             relation: ClauseRelation::Main,
@@ -222,6 +335,16 @@ fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
     }
 
     let mut sentence = Sentence { clauses };
+
+    // Merge ending particles from a trailing empty clause into the previous clause
+    if let Some(last) = sentence.clauses.last() {
+        if last.chunks.is_empty() && !last.ending_particles.is_empty() {
+            let last = sentence.clauses.pop().unwrap();
+            if let Some(prev) = sentence.clauses.last_mut() {
+                prev.ending_particles.extend(last.ending_particles);
+            }
+        }
+    }
 
     // ==========================================
     // PASS 2: PARTICLE ROLE ASSIGNMENT
@@ -359,15 +482,31 @@ mod tests {
 
     #[test]
     fn test() {
+        let sentence = "もっと早く起きればよかったのにな";
+        println!("\n=== {} ===", sentence);
+        let tokens = analyze_sentence(sentence);
+        let s = build_sentence(tokens).unwrap();
+        s.print();
+    }
+
+    #[test]
+    fn test_multiple() {
         let cases = vec![
-            // F3: の pops particle instead of noun
-            "東京からの電車",
-            // F7: nested limitation modifiers don't print
-            "友達の東京の電車",
-            // F6: sentence-final ending particles dangle as chunks
-            "行くのよ",
-            // F2: Eager modifier attachment
-            "食べた東京の電車",
+            "静かな公園で有名な料理を食べた",
+            "彼女の大切な友達の古い日記が見つかった",
+            "早く行かないと電車に乗れないよ",
+            "雨が降りそうだったのに傘を持ってこなかった",
+            "もっと早く起きればよかったのにな",
+            "彼は疲れているのに仕事を続けた",
+            "お腹が空いたら何か食べてもいいよ",
+            "急に雨が降ってきたので走って帰った",
+            "彼女は静かに部屋を出て行った",
+            "田中さんと鈴木さんと山田さんが来た",
+            "「明日来られない」と彼女が悲しそうに言った",
+            "これは私が昨日買った新しい本だ",
+            "そんなに食べたら太るよ",
+            "彼が来なかったので試合が始められなかった",
+            "もし明日晴れたら海に行こうと思っている",
         ];
 
         for sentence in cases {
