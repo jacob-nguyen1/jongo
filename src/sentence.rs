@@ -14,22 +14,13 @@ pub struct Clause {
 
 impl Clause {
     pub fn text(&self) -> String {
-        let mut text: String = self.chunks.iter().filter_map(|c| {
-            if c.word.pos == PartOfSpeech::Symbol {
-                None
-            } else {
-                let mut s = c.word.full.clone();
-                if let Some(p) = &c.particle {
-                    s.push_str(&p.full);
-                }
-                Some(s)
-            }
-        }).collect();
-        
+        let mut text = String::new();
+        for c in &self.chunks {
+            text.push_str(&c.text());
+        }
         if let Some(conn) = &self.connective {
             text.push_str(&conn.full);
         }
-        
         text
     }
 }
@@ -38,9 +29,34 @@ impl Clause {
 pub struct Chunk {
     pub word: ProcToken,
     pub particle: Option<ProcToken>,
+    pub secondary_particle: Option<ProcToken>,
     pub particle_role: Option<ParticleRole>,
     pub modifiers: Vec<Modifier>,
     pub is_head: bool,
+}
+
+impl Chunk {
+    pub fn text(&self) -> String {
+        let mut s = String::new();
+        for modifier in &self.modifiers {
+            match modifier {
+                Modifier::Adjective(adj) => s.push_str(&adj.full),
+                Modifier::Limitation(lim) => s.push_str(&lim.text()),
+                Modifier::Clause(clause) => s.push_str(&clause.text()),
+            }
+        }
+        
+        if self.word.pos != PartOfSpeech::Symbol {
+            s.push_str(&self.word.full);
+            if let Some(p) = &self.particle {
+                s.push_str(&p.full);
+            }
+            if let Some(p2) = &self.secondary_particle {
+                s.push_str(&p2.full);
+            }
+        }
+        s
+    }
 }
 
 #[derive(Debug)]
@@ -79,10 +95,13 @@ pub enum ParticleRole {
     Also,             // も
     ComparisonBase,   // より
     Accompaniment,    // と
+    Listing,          // や、と
     Temporal,         // に
     Purpose,          // に
     Agent,            // に
     Adverbial,        // に
+    Scope,            // で
+    Approximate,      // ぐらい
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
 
@@ -102,8 +121,9 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         let current = &tokens[i];
         
         chunks.push(Chunk {
-            word: current.clone(),
+            word: tokens.get(i).unwrap().clone(),
             particle: None,
+            secondary_particle: None,
             particle_role: None,
             modifiers: std::mem::take(&mut pending_modifiers),
             is_head: true,
@@ -112,7 +132,7 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         let next_token = tokens.get(i + 1);
         let next_str = next_token.map(|t| t.full.as_str());
         let next_pos = next_token.map(|t| t.pos);
-        
+
         match current {
             // === MODIFIER DETECTION ===
             
@@ -189,7 +209,7 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                             noun_chunk.particle = Some(particle_token);
                             noun_chunk
                         } else {
-                            Chunk { word: particle_token, particle: None, particle_role: None, modifiers: Vec::new(), is_head: true }
+                            Chunk { word: particle_token, particle: None, secondary_particle: None, particle_role: None, modifiers: Vec::new(), is_head: true }
                         }
                     } else {
                         let mut prev_chunk = prev_chunk;
@@ -223,9 +243,9 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 && next_str != Some("も")
                 && !matches!(
                     next_token.map(|t| t.base.as_str()),
-                    Some("くれる" | "もらう" | "あげる" | "いる"
-                       | "しまう" | "おく" | "みる" | "いく"
-                       | "くる" | "ある")
+                    Some("くれる" | "もらう" | "貰う" | "あげる" | "いる" | "居る"
+                       | "しまう" | "おく" | "置く" | "みる" | "見る" | "いく" | "行く"
+                       | "くる" | "来る" | "ある" | "有る")
                 ) => {
                 
                 let mut relation = ClauseRelation::Continuation;
@@ -255,6 +275,16 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 chunks = Vec::new();
                 i += 2;
             }
+
+            // verb ends in tara 
+            ProcToken { pos: PartOfSpeech::Verb, full, .. } if full.ends_with("たら")=> {
+                let relation = ClauseRelation::Conditional;
+                let connective = chunks.pop().map(|c| c.word);
+                clauses.push(Clause { chunks, relation, connective, ending_particles: std::mem::take(&mut pending_ending_particles) });
+                chunks = Vec::new();
+                i += 1;
+            }
+
 
             // Relative clause: Verb immediately followed by Noun
             ProcToken { pos: PartOfSpeech::Verb, .. } if next_pos == Some(PartOfSpeech::Noun) => {
@@ -290,7 +320,7 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                     "から" | "ので" => ClauseRelation::Reason,
                     "けど" | "が" => ClauseRelation::Contrast,
                     "のに" => ClauseRelation::Concessive,
-                    "ば" | "たら" | "と" => ClauseRelation::Conditional,
+                    "ば" | "と" => ClauseRelation::Conditional,
                     "ながら" => ClauseRelation::Simultaneous,
                     _ => ClauseRelation::Main,
                 };
@@ -368,7 +398,11 @@ fn assign_particle_roles(clause: &mut Clause) {
                 if next_word.pos == PartOfSpeech::Particle &&
                    (next_word.sub1 == PartOfSpeechSubcategory1::MarkingParticle || 
                     next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle ||
-                    (next_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && (next_word.full == "まで" || next_word.full == "も" || next_word.full == "より"))) 
+                    next_word.sub1 == PartOfSpeechSubcategory1::CoordinatingParticle ||
+                    (next_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && 
+                     (next_word.full == "まで" || next_word.full == "も" || next_word.full == "より" || 
+                      next_word.full == "ぐらい" || next_word.full == "くらい" || 
+                      next_word.full == "ごろ" || next_word.full == "ころ")))
                 {
                     chunk.particle_role = match next_word.full.as_str() {
                         "が" => Some(ParticleRole::Subject),
@@ -383,17 +417,34 @@ fn assign_particle_roles(clause: &mut Clause) {
                             // Adverbial: Lindera tags as AdverbializingParticle, never reaches this code path.
                         ])),
                         "へ" => Some(ParticleRole::Destination),
-                        "で" => Some(ParticleRole::Ambiguous(vec![ParticleRole::LocationAction, ParticleRole::Means])),
+                        "で" => Some(ParticleRole::Ambiguous(vec![ParticleRole::LocationAction, ParticleRole::Means, ParticleRole::Scope])),
                         "から" => Some(ParticleRole::Source),
                         "まで" => Some(ParticleRole::Limit),
                         "も" => Some(ParticleRole::Also),
                         "より" => Some(ParticleRole::ComparisonBase),
+                        "と" => Some(ParticleRole::Ambiguous(vec![ParticleRole::Accompaniment, ParticleRole::Listing])),
+                        "や" => Some(ParticleRole::Listing),
+                        "ぐらい" | "くらい" | "ごろ" | "ころ" => Some(ParticleRole::Approximate),
                         _ => None, // Unmapped particle
                     };
                     chunk.particle = Some(next_word.clone());
                     
                     // Consume the particle so it doesn't become a standalone chunk
                     iter.next();
+
+                    // Check for double particle (は or も)
+                    if let Some(next_next_chunk) = iter.peek() {
+                        let nn_word = &next_next_chunk.word;
+                        if nn_word.pos == PartOfSpeech::Particle && 
+                           (nn_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle || 
+                           (nn_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && nn_word.full == "も")) 
+                        {
+                            if nn_word.full == "は" || nn_word.full == "も" {
+                                chunk.secondary_particle = Some(nn_word.clone());
+                                iter.next();
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -414,62 +465,87 @@ impl Sentence {
     pub fn print(&self) {
         println!("Sentence");
         for clause in &self.clauses {
-            println!("└── Clause ({:?})", clause.relation);
-            
-            for chunk in &clause.chunks {
-                if chunk.word.pos == PartOfSpeech::Symbol {
-                    continue;
-                }
-                
-                print!("    ├── Chunk: {}", chunk.word.full);
-                if let Some(particle) = &chunk.particle {
-                    print!(" + {}", particle.full);
-                }
-                if let Some(role) = &chunk.particle_role {
-                    match role {
-                        ParticleRole::Ambiguous(candidates) => {
-                            let names: Vec<String> = candidates.iter().map(|c| format!("{:?}", c)).collect();
-                            print!(" [Ambiguous: {}]", names.join("/"));
-                        }
-                        _ => print!(" [{:?}]", role),
-                    }
-                }
-                println!();
-                
-                for modifier in &chunk.modifiers {
-                    match modifier {
-                        Modifier::Adjective(adj) => println!("    │   └── mod: {}", adj.full),
-                        Modifier::Limitation(lim_chunk) => {
-                            print!("    │   └── lim: {}", lim_chunk.word.full);
-                            if let Some(p) = &lim_chunk.particle {
-                                print!(" {}", p.full);
-                            }
-                            println!();
-                            for inner_mod in &lim_chunk.modifiers {
-                                match inner_mod {
-                                    Modifier::Adjective(adj) => println!("    │       └── mod: {}", adj.full),
-                                    Modifier::Limitation(inner) => {
-                                        print!("    │       └── lim: {}", inner.word.full);
-                                        if let Some(p) = &inner.particle {
-                                            print!(" {}", p.full);
-                                        }
-                                        println!();
-                                    },
-                                    Modifier::Clause(clause) => println!("    │       └── mod: [{}]", clause.text()),
-                                }
-                            }
-                        },
-                        Modifier::Clause(clause) => println!("    │   └── mod: [{}]", clause.text()),
-                    }
-                }
+            print_clause(clause, "");
+        }
+    }
+}
+
+fn print_clause(clause: &Clause, prefix: &str) {
+    println!("{}└── Clause ({:?})", prefix, clause.relation);
+    
+    let child_prefix = format!("{}    ", prefix);
+    let chunk_count = clause.chunks.len();
+    
+    for (i, chunk) in clause.chunks.iter().enumerate() {
+        if chunk.word.pos == PartOfSpeech::Symbol {
+            continue;
+        }
+        
+        let is_last = i == chunk_count - 1 && clause.connective.is_none() && clause.ending_particles.is_empty();
+        print_chunk(chunk, &child_prefix, is_last, false);
+    }
+    
+    if let Some(conn) = &clause.connective {
+        let is_last = clause.ending_particles.is_empty();
+        let branch = if is_last { "└──" } else { "├──" };
+        println!("{}{} Connective: {}", child_prefix, branch, conn.full);
+    }
+    if !clause.ending_particles.is_empty() {
+        let eps: Vec<&str> = clause.ending_particles.iter().map(|p| p.full.as_str()).collect();
+        println!("{}└── Ending: {}", child_prefix, eps.join(""));
+    }
+}
+
+fn print_chunk(chunk: &Chunk, prefix: &str, is_last: bool, is_limitation: bool) {
+    let branch = if is_last && chunk.modifiers.is_empty() { "└──" } else { "├──" };
+    let node_type = if is_limitation { "lim" } else { "Chunk" };
+    
+    print!("{}{} {}: {}", prefix, branch, node_type, chunk.word.full);
+    if let Some(particle) = &chunk.particle {
+        let mut p_text = particle.full.clone();
+        if let Some(p2) = &chunk.secondary_particle {
+            p_text.push_str(&p2.full);
+        }
+        print!(" + {}", p_text);
+    }
+    if let Some(role) = &chunk.particle_role {
+        match role {
+            ParticleRole::Ambiguous(candidates) => {
+                let names: Vec<String> = candidates.iter().map(|c| format!("{:?}", c)).collect();
+                print!(" [Ambiguous: {}]", names.join("/"));
             }
-            
-            if let Some(conn) = &clause.connective {
-                println!("    └── Connective: {}", conn.full);
+            _ => print!(" [{:?}", role),
+        }
+        if let Some(p2) = &chunk.secondary_particle {
+            if p2.full == "は" {
+                print!(" + Topic");
+            } else if p2.full == "も" {
+                print!(" + Also");
             }
-            if !clause.ending_particles.is_empty() {
-                let eps: Vec<&str> = clause.ending_particles.iter().map(|p| p.full.as_str()).collect();
-                println!("    └── Ending: {}", eps.join(""));
+        }
+        print!("]");
+    }
+    println!();
+    
+    let child_prefix = if is_last {
+        format!("{}    ", prefix)
+    } else {
+        format!("{}│   ", prefix)
+    };
+    
+    let mod_count = chunk.modifiers.len();
+    for (i, modifier) in chunk.modifiers.iter().enumerate() {
+        let mod_is_last = i == mod_count - 1;
+        let mod_branch = if mod_is_last { "└──" } else { "├──" };
+        
+        match modifier {
+            Modifier::Adjective(adj) => println!("{}{} mod: {}", child_prefix, mod_branch, adj.full),
+            Modifier::Limitation(lim_chunk) => {
+                print_chunk(lim_chunk, &child_prefix, mod_is_last, true);
+            },
+            Modifier::Clause(clause) => {
+                println!("{}{} mod: [Clause]", child_prefix, mod_branch);
+                print_clause(clause, &format!("{}    ", child_prefix));
             }
         }
     }
@@ -482,38 +558,40 @@ mod tests {
 
     #[test]
     fn test() {
-        let sentence = "もっと早く起きればよかったのにな";
-        println!("\n=== {} ===", sentence);
-        let tokens = analyze_sentence(sentence);
-        let s = build_sentence(tokens).unwrap();
-        s.print();
+        let text = "2つ目の問題は難しかったけど、3つ目は簡単だった";
+        
+        for sentence in text.split_inclusive('。') {
+            let sentence = sentence.trim();
+            if sentence.is_empty() { continue; }
+            
+            println!("\n=== {} ===", sentence);
+            let tokens = analyze_sentence(sentence);
+            if let Some(s) = build_sentence(tokens) {
+                s.print();
+            }
+        }
     }
 
     #[test]
     fn test_multiple() {
         let cases = vec![
-            "静かな公園で有名な料理を食べた",
-            "彼女の大切な友達の古い日記が見つかった",
-            "早く行かないと電車に乗れないよ",
-            "雨が降りそうだったのに傘を持ってこなかった",
-            "もっと早く起きればよかったのにな",
-            "彼は疲れているのに仕事を続けた",
-            "お腹が空いたら何か食べてもいいよ",
-            "急に雨が降ってきたので走って帰った",
-            "彼女は静かに部屋を出て行った",
-            "田中さんと鈴木さんと山田さんが来た",
-            "「明日来られない」と彼女が悲しそうに言った",
-            "これは私が昨日買った新しい本だ",
-            "そんなに食べたら太るよ",
-            "彼が来なかったので試合が始められなかった",
-            "もし明日晴れたら海に行こうと思っている",
+            "店にはペットボトルや缶が集まりました",
+            "世界で有名な作家の村上春樹さんの新しい本が出ました。",
+            "早く家に帰って読みたいです」と話していました。",
+            "静かな公園を1時間ぐらい歩きながら、友達が好きな料理を食べたのに、彼女は急に家を出て行った",
+            "3時ごろに店へ行く。3時ころに帰る。1時間くらい待つ。",
         ];
 
-        for sentence in cases {
-            println!("\n=== {} ===", sentence);
-            let tokens = analyze_sentence(sentence);
-            let s = build_sentence(tokens).unwrap();
-            s.print();
+        for text in cases {
+            for sentence in text.split_inclusive('。') {
+                let sentence = sentence.trim();
+                if sentence.is_empty() { continue; }
+                
+                println!("\n=== {} ===", sentence);
+                let tokens = analyze_sentence(sentence);
+                let s = build_sentence(tokens).unwrap();
+                s.print();
+            }
         }
     }
 }
