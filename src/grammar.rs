@@ -103,8 +103,8 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 teform|= line[j].sub1==PartOfSpeechSubcategory1::ConjuctiveParticle;
                 negative |= line[j].ctype == CTypes::IrregularNai;
                 desiderative |= line[j].ctype == CTypes::IrregularTai;
-                if j<line.len(){
-                    if line[j+1].sub1 == PartOfSpeechSubcategory1::Unbound { break; } //detect new word after te
+                if let Some(next) = line.get(j + 1) {
+                    if next.sub1 == PartOfSpeechSubcategory1::Unbound { break; } //detect new word after te
                 }
                 j+=1;
             }
@@ -117,18 +117,33 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         }
         //conjugation detection
 
-        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb){
-            i += 1;
-            while i < line.len()
-                && line[i].pos != PartOfSpeech::Symbol
-                && line[i].sub1 != PartOfSpeechSubcategory1::Unbound
+        let mut should_merge = false;
+        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
+            should_merge = true;
+        } else if i + 1 < line.len() {
+            let next_token = &line[i + 1];
+            if next_token.pos == PartOfSpeech::AuxiliaryVerb
+               || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle
+                   && (next_token.surface == "じゃ" || next_token.surface == "では"))
             {
-                conj = conj + &line[i].surface;
-                i+=1;
+                should_merge = true;
             }
         }
-        else{
-            i+=1;
+        
+        if should_merge {
+            let mut j = i + 1;
+            while j < line.len()
+                && (line[j].pos == PartOfSpeech::AuxiliaryVerb
+                    || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
+                        && (line[j].surface == "て" || line[j].surface == "で"))
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::AdverbialParticle
+                        && (line[j].surface == "じゃ" || line[j].surface == "では")))
+            {
+                conj = conj + &line[j].surface;
+                j += 1;
+            }
+            i = j - 1;
         }
         filtered_tokens.push(ProcToken {
             full: conj,
@@ -144,6 +159,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 desiderative,
             })
         });
+        i += 1;
     }
     filtered_tokens
 }
