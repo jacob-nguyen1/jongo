@@ -1,7 +1,7 @@
 use jmdict::{entries, GlossLanguage, Enum};
 
 
-pub fn lookup(word: &str, pos: crate::grammar::PartOfSpeech) -> Option<(String, Vec<String>)> {
+pub fn lookup(word: &str, pos: crate::labels::PartOfSpeech) -> Option<(String, Vec<String>)> {
     for entry in jmdict::entries() {
         // if the word matches kanji or reading
         if entry.kanji_elements().any(|k| k.text == word) || entry.reading_elements().any(|r| r.text == word) {
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn test_okaasan() {
         let word = "葉"; // 私は食べる
-        let result = lookup(word, crate::grammar::PartOfSpeech::Noun).unwrap();
+        let result = lookup(word, crate::labels::PartOfSpeech::Noun).unwrap();
         println!("original word: {}\nkana: {}\nenglish: {:?}", word, result.0, result.1);
         // assert!(result.0.contains("おかあさん"));
         // assert!(result.1.contains(&"mother"));

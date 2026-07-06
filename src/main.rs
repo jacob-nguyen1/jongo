@@ -1,5 +1,5 @@
+use jongo::grammar::grammar;
 
-mod grammar;
 fn main() {
-    grammar::grammar();
+    grammar();
 }

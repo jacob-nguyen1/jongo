@@ -1,0 +1,335 @@
+use phf::phf_map;
+
+//grammar.rs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartOfSpeech {
+    Noun,
+    Prefix,
+    Verb,
+    Adjective,
+    Adverb,
+    AdnominalAdjective,
+    Conjunction,
+    Particle,
+    AuxiliaryVerb,
+    Interjection,
+    Symbol,
+    Filler,
+    Others,
+    ERR,
+}
+
+impl PartOfSpeech {
+    pub fn matches_jmdict(&self, p: &jmdict::PartOfSpeech) -> bool {
+        let p_str = format!("{:?}", p).to_lowercase();
+        match self {
+            PartOfSpeech::Noun => p_str.contains("noun"),
+            PartOfSpeech::Verb => p_str.contains("verb"),
+            PartOfSpeech::Adjective => p_str.contains("adjective"),
+            PartOfSpeech::Adverb => p_str.contains("adverb"),
+            PartOfSpeech::Particle => p_str.contains("particle"),
+            _ => true,
+        }
+    }
+}
+
+pub static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
+    "名詞" => PartOfSpeech::Noun,
+    "接頭詞" => PartOfSpeech::Prefix,
+    "動詞" => PartOfSpeech::Verb,
+    "形容詞" => PartOfSpeech::Adjective,
+    "副詞" => PartOfSpeech::Adverb,
+    "連体詞" => PartOfSpeech::AdnominalAdjective,
+    "接続詞" => PartOfSpeech::Conjunction,
+    "助詞" => PartOfSpeech::Particle,
+    "助動詞" => PartOfSpeech::AuxiliaryVerb,
+    "感動詞" => PartOfSpeech::Interjection,
+    "記号" => PartOfSpeech::Symbol,
+    "フィラー" => PartOfSpeech::Filler,
+    "その他" => PartOfSpeech::Others,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartOfSpeechSubcategory1 {
+    SuruVerb,
+    NaiAdjStem,
+    General,
+    QuoteIndicator,
+    ProperNoun,
+    Number,
+    Conjunction,
+    Suffix,
+    Pronoun,
+    DependentVerb,
+    Irregular,
+    Bound,
+    Adverbial,
+    AdjectiveConjunction,
+    NumeralPrefix,
+    VerbConnection,
+    NounConnection,
+    Unbound,
+    ParticleConnectingAdverb,
+    MarkingParticle,
+    LinkingParticle,
+    EndingParticle,
+    ConjuctiveParticle,
+    AdverbializingParticle,
+    AdverbialParticle,
+    AdverbialORCoordinatingOREndingParticle,
+    CoordinatingParticle,
+    NormalizingParticle,
+    Alphabet,
+    OpenParenthesis,
+    ClosedParenthesis,
+    Period,
+    Void,
+    Comma,
+    Interjection,
+    AdjectiveVerbStem,
+    X,
+    ERR,
+}
+
+pub static POS_SUB1_MAP: phf::Map<&'static str, PartOfSpeechSubcategory1> = phf_map! {
+    "サ変接続" => PartOfSpeechSubcategory1::SuruVerb,
+    "ナイ形容詞語幹" => PartOfSpeechSubcategory1::NaiAdjStem,
+    "一般" => PartOfSpeechSubcategory1::General,
+    "引用文字列" => PartOfSpeechSubcategory1::QuoteIndicator,
+    "固有名詞" => PartOfSpeechSubcategory1::ProperNoun,
+    "数" => PartOfSpeechSubcategory1::Number,
+    "接続詞的" => PartOfSpeechSubcategory1::Conjunction,
+    "接尾" => PartOfSpeechSubcategory1::Suffix,
+    "代名詞" => PartOfSpeechSubcategory1::Pronoun,
+    "動詞非自立的" => PartOfSpeechSubcategory1::DependentVerb,
+    "特殊" => PartOfSpeechSubcategory1::Irregular,
+    "非自立" => PartOfSpeechSubcategory1::Bound,
+    "副詞可能" => PartOfSpeechSubcategory1::Adverbial,
+    "形容詞接続" => PartOfSpeechSubcategory1::AdjectiveConjunction,
+    "数接続" => PartOfSpeechSubcategory1::NumeralPrefix,
+    "動詞接続" => PartOfSpeechSubcategory1::VerbConnection,
+    "名詞接続" => PartOfSpeechSubcategory1::NounConnection,
+    "自立" => PartOfSpeechSubcategory1::Unbound,
+    "助詞類接続" => PartOfSpeechSubcategory1::ParticleConnectingAdverb,
+    "格助詞" => PartOfSpeechSubcategory1::MarkingParticle,
+    "係助詞" => PartOfSpeechSubcategory1::LinkingParticle,
+    "終助詞" => PartOfSpeechSubcategory1::EndingParticle,
+    "接続助詞" => PartOfSpeechSubcategory1::ConjuctiveParticle,
+    "副詞化" => PartOfSpeechSubcategory1::AdverbializingParticle,
+    "副助詞" => PartOfSpeechSubcategory1::AdverbialParticle,
+    "副助詞／並立助詞／終助詞" => PartOfSpeechSubcategory1::AdverbialORCoordinatingOREndingParticle,
+    "並立助詞" => PartOfSpeechSubcategory1::CoordinatingParticle,
+    "連体化" => PartOfSpeechSubcategory1::NormalizingParticle,
+    "アルファベット" => PartOfSpeechSubcategory1::Alphabet,
+    "括弧開" => PartOfSpeechSubcategory1::OpenParenthesis,
+    "括弧閉" => PartOfSpeechSubcategory1::ClosedParenthesis,
+    "句点" => PartOfSpeechSubcategory1::Period,
+    "空白" => PartOfSpeechSubcategory1::Void,
+    "読点" => PartOfSpeechSubcategory1::Comma,
+    "間投" => PartOfSpeechSubcategory1::Interjection,
+    "形容動詞語幹" => PartOfSpeechSubcategory1::AdjectiveVerbStem,
+    "*" => PartOfSpeechSubcategory1::X,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartOfSpeechSubcategory2 {
+    General,
+    Name,
+    Organization,
+    Region,
+    SuruVerb,
+    AdjectiveVerbStem,
+    Counter,
+    AuxilaryVerbStem,
+    Irregular,
+    PossibleAdverb,
+    Contraction,
+    Quotation,
+    Collocation,
+    X,
+    ERR,
+}
+
+pub static POS_SUB2_MAP: phf::Map<&'static str, PartOfSpeechSubcategory2> = phf_map! {
+    "一般" => PartOfSpeechSubcategory2::General,
+    "人名" => PartOfSpeechSubcategory2::Name,
+    "組織" => PartOfSpeechSubcategory2::Organization,
+    "地域" => PartOfSpeechSubcategory2::Region,
+    "サ変接続" => PartOfSpeechSubcategory2::SuruVerb,
+    "形容動詞語幹" => PartOfSpeechSubcategory2::AdjectiveVerbStem,
+    "助数詞" => PartOfSpeechSubcategory2::Counter,
+    "助動詞語幹" => PartOfSpeechSubcategory2::AuxilaryVerbStem,
+    "特殊" => PartOfSpeechSubcategory2::Irregular,
+    "副詞可能" => PartOfSpeechSubcategory2::PossibleAdverb,
+    "縮約" => PartOfSpeechSubcategory2::Contraction,
+    "引用" => PartOfSpeechSubcategory2::Quotation,
+    "連語" => PartOfSpeechSubcategory2::Collocation,
+    "*" => PartOfSpeechSubcategory2::X,
+};
+
+#[derive(Debug, Clone, Copy)]
+pub enum PartOfSpeechSubcategory3 {
+    General,
+    Surname,
+    Name,
+    Country,
+    X,
+    ERR,
+}
+
+pub static POS_SUB3_MAP: phf::Map<&'static str, PartOfSpeechSubcategory3> = phf_map! {
+    "一般" => PartOfSpeechSubcategory3::General,
+    "姓" => PartOfSpeechSubcategory3::Surname,
+    "名" => PartOfSpeechSubcategory3::Name,
+    "国" => PartOfSpeechSubcategory3::Country,
+    "*" => PartOfSpeechSubcategory3::X,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CTypes {
+    AdjectiveAUODan,
+    AdjectiveII,
+    AdjectiveIDan,
+    Invariable,
+    IrregularKuRu,
+    DependentSuRuConnection,
+    DependentZuRuConnection,
+    IndependentSuruConnection,
+    IrregularRaVerb,
+    RuVerb,
+    KuReRu,
+    HaRowUEConjugation,
+    IrregularERu,
+    IrregularIKuTeForm,
+    BuUVerb,
+    MuUVerb,
+    RuUVerb,
+    WaUVerb,
+    TsuVerb,
+    AruVerb,
+    KeigoAruVerb,
+    IrregularTa,
+    IrregularTai,
+    IrregularNu,
+    IrregularMaSu,
+    IrregularNai,
+    ClassicalKi,
+    ClassicalBeShi,
+    ClassicalRu,
+    X,
+    ERR,
+}
+
+pub static C_TYPE_MAP: phf::Map<&'static str, CTypes> = phf_map! {
+    "形容詞・アウオ段" => CTypes::AdjectiveAUODan,
+    "形容詞・イイ" => CTypes::AdjectiveII,
+    "形容詞・イ段" => CTypes::AdjectiveIDan,
+    "不変化型" => CTypes::Invariable,
+    "カ変・来ル" => CTypes::IrregularKuRu,
+    "サ変・−スル" => CTypes::DependentSuRuConnection,
+    "サ変・−ズル" => CTypes::DependentZuRuConnection,
+    "サ変・スル" => CTypes::IndependentSuruConnection,
+    "ラ変" => CTypes::IrregularRaVerb,
+    "一段" => CTypes::RuVerb,
+    "一段・クレル" => CTypes::KuReRu,
+    "下二・ハ行" => CTypes::HaRowUEConjugation,
+    "下二・得" => CTypes::IrregularERu,
+    "五段・カ行促音便ユク" => CTypes::IrregularIKuTeForm,
+    "五段・バ行" => CTypes::BuUVerb,
+    "五段・マ行" => CTypes::MuUVerb,
+    "五段・ラ行" => CTypes::RuUVerb,
+    "五段・ワ行促音便" => CTypes::WaUVerb,
+    "下二・タ行" => CTypes::TsuVerb,
+    "五段・ラ行アル" => CTypes::AruVerb,
+    "五段・ラ行特殊" => CTypes::KeigoAruVerb,
+    "特殊・タ" => CTypes::IrregularTa,
+    "特殊・タイ" => CTypes::IrregularTai,
+    "特殊・ヌ" => CTypes::IrregularNu,
+    "特殊・マス" => CTypes::IrregularMaSu,
+    "特殊・ナイ" => CTypes::IrregularNai,
+    "文語・キ" => CTypes::ClassicalKi,
+    "文語・ベシ" => CTypes::ClassicalBeShi,
+    "文語・ル" => CTypes::ClassicalRu,
+    "*" => CTypes::X,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CForms {
+    ImperativeYo,
+    AReruConnection,
+    Plain,
+    ClassicalPlain,
+    NounConnection,
+    ContractedRuNNo,
+    AUConnection,
+    ContractedRaNNai,
+    ContractedRuNo,
+    Garu,
+    GozaiConjunction,
+    DoubleConsonant,
+    Continuative,
+    Imperfective,
+    Continuative2,
+    X,
+    ERR,
+}
+
+pub static C_FORM_MAP: phf::Map<&'static str, CForms> = phf_map! {
+    "命令ｙｏ" => CForms::ImperativeYo,
+    "未然レル接続" => CForms::AReruConnection,
+    "基本形" => CForms::Plain,
+    "文語基本形" => CForms::ClassicalPlain,
+    "体言接続" => CForms::NounConnection,
+    "体言接続特殊" => CForms::ContractedRuNNo,
+    "未然ウ接続" => CForms::AUConnection,
+    "未然特殊" => CForms::ContractedRaNNai,
+    "体言接続特殊２" => CForms::ContractedRuNo,
+    "ガル接続" => CForms::Garu,
+    "連用ゴザイ接続" => CForms::GozaiConjunction,
+    "基本形-促音便" => CForms::DoubleConsonant,
+    "連用形" => CForms::Continuative,
+    "未然形" => CForms::Imperfective,
+    "連用タ接続" => CForms::Continuative,
+    "連用テ接続" => CForms::Continuative,
+    "*" => CForms::X,
+};
+
+//sentence.rs
+#[derive(Debug)]
+pub enum ClauseRelation {
+    Reason,       // から、ので (ConjunctiveParticle)
+    Contrast,     // けど、が (ConjunctiveParticle)
+    Concessive,   // のに
+    Conditional,  // ば、たら
+    Continuation, // て
+    Sequence,     // てから
+    Simultaneous, // ながら
+    Until,        // まで after verb
+    Main,         // sentence-final
+    Modifier,     // relative clause
+    Quotation,    // と after verb
+}
+
+#[derive(Debug, Clone)]
+pub enum ParticleRole {
+    Subject,          // が
+    Object,           // を
+    Topic,            // は
+    IndirectObject,   // に (default)
+    Destination,      // に、へ
+    LocationAction,   // で (default)
+    Means,            // で
+    Source,           // から
+    Limit,            // まで
+    Also,             // も
+    ComparisonBase,   // より
+    Accompaniment,    // と
+    Listing,          // や、と
+    Temporal,         // に
+    Purpose,          // に
+    Agent,            // に
+    Adverbial,        // に
+    Scope,            // で
+    Approximate,      // ぐらい
+    Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
+}

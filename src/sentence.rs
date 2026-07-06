@@ -1,4 +1,5 @@
-use crate::grammar::{analyze_sentence, ProcToken, PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2};
+use crate::labels::{PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2, ClauseRelation, ParticleRole};
+use crate::grammar::{analyze_sentence, ProcToken};
 
 pub struct Sentence {
     pub clauses: Vec<Clause>,
@@ -66,44 +67,7 @@ pub enum Modifier {
     Clause(Box<Clause>),
 }
 
-#[derive(Debug)]
-pub enum ClauseRelation {
-    Reason,       // から、ので (ConjunctiveParticle)
-    Contrast,     // けど、が (ConjunctiveParticle)
-    Concessive,   // のに
-    Conditional,  // ば、たら
-    Continuation, // て
-    Sequence,     // てから
-    Simultaneous, // ながら
-    Until,        // まで after verb
-    Main,         // sentence-final
-    Modifier,     // relative clause
-    Quotation,    // と after verb
-}
 
-#[derive(Debug, Clone)]
-pub enum ParticleRole {
-    Subject,          // が
-    Object,           // を
-    Topic,            // は
-    IndirectObject,   // に (default)
-    Destination,      // に、へ
-    LocationAction,   // で (default)
-    Means,            // で
-    Source,           // から
-    Limit,            // まで
-    Also,             // も
-    ComparisonBase,   // より
-    Accompaniment,    // と
-    Listing,          // や、と
-    Temporal,         // に
-    Purpose,          // に
-    Agent,            // に
-    Adverbial,        // に
-    Scope,            // で
-    Approximate,      // ぐらい
-    Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
-}
 
 pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
     let tokens: Vec<ProcToken> = tokens
