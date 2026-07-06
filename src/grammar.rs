@@ -417,16 +417,9 @@ mod tests {
     #[test]
     fn lindera_raw() {
         let sentences = vec![
-            // LocationAction で
-            "公園で遊ぶ",           // play at the park
-            "学校で勉強する",       // study at school
-            "東京で働く",           // work in Tokyo
-            // Means で
-            "バスで行く",           // go by bus
-            "箸で食べる",           // eat with chopsticks
-            "ペンで書く",           // write with a pen
-            // Ambiguous
-            "電車で食べた",         // ate on the train? ate by means of train?
+            "14つ", "十四つ",
+            "12月", "十二月",
+            "14ヶ月", "14か月",
         ];
 
         for sentence in sentences {
@@ -446,7 +439,7 @@ mod tests {
     #[test]
     fn filtered() {
         let sentences = vec![
-            "静かに歩く",
+            "もっと早く起きればよかったのにな",
         ];
 
         for sentence in sentences {

@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let text = "2つ目の問題は難しかったけど、3つ目は簡単だった";
+        let text = "それは1か月でした。";
         
         for sentence in text.split_inclusive('。') {
             let sentence = sentence.trim();
