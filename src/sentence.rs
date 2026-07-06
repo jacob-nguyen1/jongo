@@ -1,4 +1,5 @@
-use crate::grammar::{analyze_sentence, ProcToken, PartOfSpeech, PartOfSpeechSubcategory1};
+use crate::labels::{PartOfSpeech, PartOfSpeechSubcategory1};
+use crate::grammar::{analyze_sentence, ProcToken};
 
 pub struct Sentence {
     pub clauses: Vec<Clause>,
