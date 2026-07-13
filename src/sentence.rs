@@ -72,7 +72,9 @@ pub enum Modifier {
 pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
     let tokens: Vec<ProcToken> = tokens
         .into_iter()
-        .filter(|t| t.pos != PartOfSpeech::Symbol || t.sub1 == PartOfSpeechSubcategory1::Comma)
+        .filter(|t| t.pos != PartOfSpeech::Symbol || 
+                    t.sub1 == PartOfSpeechSubcategory1::Comma ||
+                    t.sub1 == PartOfSpeechSubcategory1::OpenParenthesis)
         .collect();
 
     let mut clauses: Vec<Clause> = Vec::new();
@@ -88,6 +90,15 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         // Comma barrier: record position in chunks vec, skip the comma token
         if current.pos == PartOfSpeech::Symbol && current.sub1 == PartOfSpeechSubcategory1::Comma {
             comma_barrier = Some(chunks.len());
+            i += 1;
+            continue;
+        }
+
+        // Bracketed Quotation start: force clause split before the quote starts
+        if current.pos == PartOfSpeech::Symbol && current.sub1 == PartOfSpeechSubcategory1::OpenParenthesis {
+            if !chunks.is_empty() {
+                clauses.push(Clause { chunks: std::mem::take(&mut chunks), relation: ClauseRelation::Main, connective: None, ending_particles: std::mem::take(&mut pending_ending_particles) });
+            }
             i += 1;
             continue;
         }
@@ -544,7 +555,8 @@ fn print_clause(clause: &Clause, prefix: &str) {
         }
         
         let is_last = i == chunk_count - 1 && clause.connective.is_none() && clause.ending_particles.is_empty();
-        print_chunk(chunk, &child_prefix, is_last, false);
+        let branch = if is_last { "└──" } else { "├──" };
+        print_chunk(chunk, &child_prefix, branch, false);
     }
     
     if let Some(conn) = &clause.connective {
@@ -558,8 +570,29 @@ fn print_clause(clause: &Clause, prefix: &str) {
     }
 }
 
-fn print_chunk(chunk: &Chunk, prefix: &str, is_last: bool, is_limitation: bool) {
-    let branch = if is_last && chunk.modifiers.is_empty() { "└──" } else { "├──" };
+fn print_chunk(chunk: &Chunk, prefix: &str, branch: &str, is_limitation: bool) {
+    let mod_count = chunk.modifiers.len();
+    
+    // Modifiers must have a vertical line connecting them down to the Root chunk
+    let mod_child_prefix = format!("{}│   ", prefix);
+
+    // Print modifiers BEFORE the head chunk to match sequential UI rendering
+    for (i, modifier) in chunk.modifiers.iter().enumerate() {
+        let mod_is_first = i == 0; 
+        let mod_branch = if mod_is_first { "┌──" } else { "├──" };
+        
+        match modifier {
+            Modifier::Adjective(adj) => println!("{}{} mod: {}", mod_child_prefix, mod_branch, adj.full),
+            Modifier::Clause(mod_clause) => {
+                println!("{}{} mod: [Clause]", mod_child_prefix, mod_branch);
+                print_clause(mod_clause, &format!("{}    ", mod_child_prefix));
+            }
+            Modifier::Limitation(lim_chunk) => {
+                print_chunk(lim_chunk, &mod_child_prefix, mod_branch, true);
+            }
+        }
+    }
+
     let node_type = if is_limitation { "lim" } else { "Chunk" };
     
     print!("{}{} {}: {}", prefix, branch, node_type, chunk.word.full);
@@ -588,29 +621,6 @@ fn print_chunk(chunk: &Chunk, prefix: &str, is_last: bool, is_limitation: bool) 
         print!("]");
     }
     println!();
-    
-    let child_prefix = if is_last {
-        format!("{}    ", prefix)
-    } else {
-        format!("{}│   ", prefix)
-    };
-    
-    let mod_count = chunk.modifiers.len();
-    for (i, modifier) in chunk.modifiers.iter().enumerate() {
-        let mod_is_last = i == mod_count - 1;
-        let mod_branch = if mod_is_last { "└──" } else { "├──" };
-        
-        match modifier {
-            Modifier::Adjective(adj) => println!("{}{} mod: {}", child_prefix, mod_branch, adj.full),
-            Modifier::Limitation(lim_chunk) => {
-                print_chunk(lim_chunk, &child_prefix, mod_is_last, true);
-            },
-            Modifier::Clause(clause) => {
-                println!("{}{} mod: [Clause]", child_prefix, mod_branch);
-                print_clause(clause, &format!("{}    ", child_prefix));
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -624,7 +634,8 @@ mod tests {
         // 1st case: 昨日 is pulled into the relative clause.
         // 2nd case: 昨日 stays in the main clause.
         // Fix 5: によると evidential expression
-        let text = "昨日買った本を読む。昨日、買った本を読む。子供の時、よく遊んだ。天気予報によると明日は雨だ。";
+        // Fix 6: Bracketed quotation
+        let text = "昨日買った本を読む。昨日、買った本を読む。子供の時、よく遊んだ。天気予報によると明日は雨だ。彼は「行きたくない」と言った。";
         
         for sentence in text.split_inclusive('。') {
             let sentence = sentence.trim();
