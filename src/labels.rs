@@ -222,9 +222,11 @@ pub enum CTypes {
     IrregularNu,
     IrregularMaSu,
     IrregularNai,
+    IrregularDa,
     ClassicalKi,
     ClassicalBeShi,
     ClassicalRu,
+    SpecialIKu,
     X,
     ERR,
 }
@@ -259,9 +261,11 @@ pub static C_TYPE_MAP: phf::Map<&'static str, CTypes> = phf_map! {
     "特殊・ヌ" => CTypes::IrregularNu,
     "特殊・マス" => CTypes::IrregularMaSu,
     "特殊・ナイ" => CTypes::IrregularNai,
+    "特殊・ダ" => CTypes::IrregularDa,
     "文語・キ" => CTypes::ClassicalKi,
     "文語・ベシ" => CTypes::ClassicalBeShi,
     "文語・ル" => CTypes::ClassicalRu,
+    "五段・カ行促音便" => CTypes::SpecialIKu,
     "*" => CTypes::X,
 };
 
@@ -282,6 +286,7 @@ pub enum CForms {
     Continuative,
     Imperfective,
     Continuative2,
+    Conditional,
     X,
     ERR,
 }
@@ -303,5 +308,6 @@ pub static C_FORM_MAP: phf::Map<&'static str, CForms> = phf_map! {
     "未然形" => CForms::Imperfective,
     "連用タ接続" => CForms::Continuative,
     "連用テ接続" => CForms::Continuative,
+    "仮定形" => CForms::Conditional,
     "*" => CForms::X,
 };
