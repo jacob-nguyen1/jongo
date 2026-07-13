@@ -72,17 +72,25 @@ pub enum Modifier {
 pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
     let tokens: Vec<ProcToken> = tokens
         .into_iter()
-        .filter(|t| t.pos != PartOfSpeech::Symbol)
+        .filter(|t| t.pos != PartOfSpeech::Symbol || t.sub1 == PartOfSpeechSubcategory1::Comma)
         .collect();
 
     let mut clauses: Vec<Clause> = Vec::new();
     let mut chunks: Vec<Chunk> = Vec::new();
     let mut pending_modifiers: Vec<Modifier> = Vec::new();
     let mut pending_ending_particles: Vec<ProcToken> = Vec::new();
+    let mut comma_barrier: Option<usize> = None; // chunks.len() at time of last comma
     
     let mut i = 0;
     while i < tokens.len() {
         let current = &tokens[i];
+
+        // Comma barrier: record position in chunks vec, skip the comma token
+        if current.pos == PartOfSpeech::Symbol && current.sub1 == PartOfSpeechSubcategory1::Comma {
+            comma_barrier = Some(chunks.len());
+            i += 1;
+            continue;
+        }
         
         chunks.push(Chunk {
             word: tokens.get(i).unwrap().clone(),
@@ -197,6 +205,69 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 i += 1;
             }
 
+            // === TEMPORAL 時 CLAUSE SEPARATION ===
+            // When 時 has preceding modifiers (verb clause, の-linked noun, adjective), it marks
+            // a temporal subordinate clause boundary.
+            // Triggers when followed by: a particle (に, は, も, から, まで) OR no particle at all
+            // (casual speech: 子供の時よく遊んだ).
+            // Does NOT trigger when followed by の (時 is linking to another noun, e.g. 行った時のこと).
+            // Standalone 時には ("sometimes") is pre-merged by Lindera into a single Adverb token,
+            // so it never reaches this rule. その時 has no modifiers, so it also doesn't trigger.
+            ProcToken { pos: PartOfSpeech::Noun, sub1: PartOfSpeechSubcategory1::Bound, sub2: PartOfSpeechSubcategory2::PossibleAdverb, .. }
+                if current.base == "時" 
+                && !chunks.last().map_or(true, |c| c.modifiers.is_empty())
+                && next_str != Some("の") => {
+                
+                // Pop the 時 chunk — it becomes the connective
+                let toki_chunk = chunks.pop().unwrap();
+                
+                // Extract modifiers from the 時 chunk back into the clause.
+                // e.g. 子供の時 → 子供 chunk stays in temporal clause
+                // e.g. 行った時 → 行った clause's chunks get extracted into temporal clause
+                for modifier in toki_chunk.modifiers {
+                    match modifier {
+                        Modifier::Clause(inner_clause) => {
+                            chunks.extend(inner_clause.chunks);
+                        }
+                        Modifier::Limitation(lim_chunk) => {
+                            chunks.push(*lim_chunk);
+                        }
+                        Modifier::Adjective(adj_token) => {
+                            chunks.push(Chunk {
+                                word: adj_token,
+                                particle: None,
+                                secondary_particle: None,
+                                particle_role: None,
+                                modifiers: Vec::new(),
+                                is_head: true,
+                            });
+                        }
+                    }
+                }
+                
+                // Build connective: 時 + following boundary particles only (に, は, も, から, まで)
+                let mut connective_surface = toki_chunk.word.full.clone();
+                let mut consumed = 0;
+                let mut j = i + 1;
+                while j < tokens.len() && matches!(tokens[j].full.as_str(), "に" | "は" | "も" | "から" | "まで") {
+                    connective_surface.push_str(&tokens[j].full);
+                    consumed += 1;
+                    j += 1;
+                }
+                
+                let mut connective_token = toki_chunk.word;
+                connective_token.full = connective_surface;
+                
+                clauses.push(Clause {
+                    chunks,
+                    relation: ClauseRelation::Temporal,
+                    connective: Some(connective_token),
+                    ending_particles: std::mem::take(&mut pending_ending_particles),
+                });
+                chunks = Vec::new();
+                i += 1 + consumed;
+            }
+
             // === CLAUSE SEPARATION ===
 
             // te-form verb marks continuation
@@ -261,9 +332,18 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 };
                 
                 if !is_ending_no {
-                    let modifier_clause = Clause { chunks, relation: ClauseRelation::Modifier, connective: None, ending_particles: Vec::new() };
+                    // Comma barrier: only include post-comma chunks in the modifier clause.
+                    // Pre-comma chunks stay in the main clause (e.g. 昨日、買った本 → 昨日 stays out).
+                    let modifier_chunks = if let Some(barrier) = comma_barrier.take() {
+                        chunks.drain(barrier..).collect()
+                    } else {
+                        std::mem::take(&mut chunks)
+                    };
+                    let modifier_clause = Clause { chunks: modifier_chunks, relation: ClauseRelation::Modifier, connective: None, ending_particles: Vec::new() };
                     pending_modifiers.push(Modifier::Clause(Box::new(modifier_clause)));
-                    chunks = Vec::new();
+                    if chunks.is_empty() {
+                        // No pre-comma chunks, chunks was fully drained
+                    }
                 }
                 i += 1;
             }
@@ -280,13 +360,20 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
             // Standalone conjunctive particles
             // 雨が降っているので行きません。
             ProcToken { pos: PartOfSpeech::Particle, sub1: PartOfSpeechSubcategory1::ConjuctiveParticle, full, .. } => {
-                let relation = match full.as_str() {
-                    "から" | "ので" => ClauseRelation::Reason,
-                    "けど" | "が" => ClauseRelation::Contrast,
-                    "のに" => ClauseRelation::Concessive,
-                    "ば" | "と" => ClauseRelation::Conditional,
-                    "ながら" => ClauseRelation::Simultaneous,
-                    _ => ClauseRelation::Main,
+                let is_niyoruto = full == "と" && chunks.len() >= 2 && chunks[chunks.len() - 2].word.base == "よる";
+
+                let relation = if is_niyoruto {
+                    ClauseRelation::Evidential
+                } else {
+                    match full.as_str() {
+                        "から" | "ので" => ClauseRelation::Reason,
+                        "けど" | "が" => ClauseRelation::Contrast,
+                        "のに" => ClauseRelation::Concessive,
+                        "ば" => ClauseRelation::Conditional,
+                        "と" => ClauseRelation::Ambiguous(vec![ClauseRelation::Conditional, ClauseRelation::Quotation]),
+                        "ながら" => ClauseRelation::Simultaneous,
+                        _ => ClauseRelation::Main,
+                    }
                 };
                 let connective = chunks.pop().map(|c| c.word);
                 clauses.push(Clause { chunks, relation, connective, ending_particles: std::mem::take(&mut pending_ending_particles) });
@@ -359,7 +446,17 @@ fn assign_particle_roles(clause: &mut Clause) {
         if chunk.word.pos == PartOfSpeech::Noun {
             if let Some(next_chunk) = iter.peek() {
                 let next_word = &next_chunk.word;
+
+                // Adverbial に (e.g. 静かに, 急に): Lindera tags this に as AdverbializingParticle,
+                // distinct from regular MarkingParticle. Assign Adverbial directly, no ambiguity.
                 if next_word.pos == PartOfSpeech::Particle &&
+                   next_word.sub1 == PartOfSpeechSubcategory1::AdverbializingParticle {
+                    chunk.particle_role = Some(ParticleRole::Adverbial);
+                    chunk.particle = Some(next_word.clone());
+                    iter.next();
+                }
+                // Standard particle absorption
+                else if next_word.pos == PartOfSpeech::Particle &&
                    (next_word.sub1 == PartOfSpeechSubcategory1::MarkingParticle || 
                     next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle ||
                     next_word.sub1 == PartOfSpeechSubcategory1::CoordinatingParticle ||
@@ -372,13 +469,14 @@ fn assign_particle_roles(clause: &mut Clause) {
                         "が" => Some(ParticleRole::Subject),
                         "を" => Some(ParticleRole::Object),
                         "は" => Some(ParticleRole::Topic),
+                        // Adverbial nouns (e.g. 絶対に): Lindera tags noun as sub1=Adverbial
+                        // but に as regular MarkingParticle. Bypass ambiguity.
+                        "に" if chunk.word.sub1 == PartOfSpeechSubcategory1::Adverbial => Some(ParticleRole::Adverbial),
                         "に" => Some(ParticleRole::Ambiguous(vec![
                             ParticleRole::IndirectObject, 
                             ParticleRole::Destination,
                             ParticleRole::Temporal,
                             ParticleRole::Purpose,
-                            // Agent: only valid with passive predicates. Re-add when ConjugationFeatures has is_passive.
-                            // Adverbial: Lindera tags as AdverbializingParticle, never reaches this code path.
                         ])),
                         "へ" => Some(ParticleRole::Destination),
                         "で" => Some(ParticleRole::Ambiguous(vec![ParticleRole::LocationAction, ParticleRole::Means, ParticleRole::Scope])),
@@ -522,7 +620,11 @@ mod tests {
 
     #[test]
     fn test() {
-        let text = "それは1か月でした。";
+        // Fix 4: Comma barrier. 
+        // 1st case: 昨日 is pulled into the relative clause.
+        // 2nd case: 昨日 stays in the main clause.
+        // Fix 5: によると evidential expression
+        let text = "昨日買った本を読む。昨日、買った本を読む。子供の時、よく遊んだ。天気予報によると明日は雨だ。";
         
         for sentence in text.split_inclusive('。') {
             let sentence = sentence.trim();

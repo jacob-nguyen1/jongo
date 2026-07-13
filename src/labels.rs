@@ -295,7 +295,7 @@ pub static C_FORM_MAP: phf::Map<&'static str, CForms> = phf_map! {
 };
 
 //sentence.rs
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ClauseRelation {
     Reason,       // から、ので (ConjunctiveParticle)
     Contrast,     // けど、が (ConjunctiveParticle)
@@ -304,10 +304,13 @@ pub enum ClauseRelation {
     Continuation, // て
     Sequence,     // てから
     Simultaneous, // ながら
+    Temporal,     // 時 (when)
     Until,        // まで after verb
     Main,         // sentence-final
     Modifier,     // relative clause
     Quotation,    // と after verb
+    Evidential,   // によると (according to)
+    Ambiguous(Vec<ClauseRelation>), // When rule-based parsing cannot distinguish (e.g., conditional vs quotation と)
 }
 
 #[derive(Debug, Clone)]
