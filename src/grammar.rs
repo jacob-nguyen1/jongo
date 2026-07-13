@@ -37,6 +37,7 @@ pub struct ProcToken {
     pub base: String,
     pub pos: PartOfSpeech,
     pub sub1: PartOfSpeechSubcategory1,
+    pub sub2: PartOfSpeechSubcategory2,
     pub conjugation: Option<ConjugationFeatures>,
 }
 
@@ -90,6 +91,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let pos = token.pos.clone();
         let base = token.base.clone();
         let sub1=token.sub1.clone();
+        let sub2 = token.sub2;
         let mut conj = token.surface.clone();
 
         //conjugation detection
@@ -138,24 +140,40 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         }
         //conjugation detection
 
-        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb){
-            i += 1;
-            while i < line.len()
-                && line[i].pos != PartOfSpeech::Symbol
-                && line[i].sub1 != PartOfSpeechSubcategory1::Unbound
+        let mut should_merge = false;
+        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
+            should_merge = true;
+        } else if i + 1 < line.len() {
+            let next_token = &line[i + 1];
+            if next_token.pos == PartOfSpeech::AuxiliaryVerb
+               || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle
+                   && (next_token.surface == "じゃ" || next_token.surface == "では"))
             {
-                conj = conj + &line[i].surface;
-                i+=1;
+                should_merge = true;
             }
         }
-        else{
-            i+=1;
+        
+        if should_merge {
+            let mut j = i + 1;
+            while j < line.len()
+                && (line[j].pos == PartOfSpeech::AuxiliaryVerb
+                    || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
+                        && (line[j].surface == "て" || line[j].surface == "で"))
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::AdverbialParticle
+                        && (line[j].surface == "じゃ" || line[j].surface == "では")))
+            {
+                conj = conj + &line[j].surface;
+                j += 1;
+            }
+            i = j - 1;
         }
         filtered_tokens.push(ProcToken {
             full: conj,
             base,
             pos: pos,
             sub1,
+            sub2,
             conjugation: Some(ConjugationFeatures {
                 negative,
                 past,
@@ -167,6 +185,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 causative,
             })
         });
+        i += 1;
     }
     filtered_tokens
 }
@@ -317,6 +336,53 @@ pub fn grammar() {
             }
             "5" => break,
             _ => println!("\nInvalid option. Please try again.\n"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dumps raw Lindera tokenization for a batch of sentences.
+    /// Run with: cargo test --lib grammar::tests::lindera_raw -- --nocapture
+    #[test]
+    fn lindera_raw() {
+        let sentences = vec![
+            "14つ", "十四つ",
+            "12月", "十二月",
+            "14ヶ月", "14か月",
+        ];
+
+        for sentence in sentences {
+            println!("\n=== {} ===", sentence);
+            let tokens = PARSER.parse(sentence).unwrap();
+            for t in &tokens {
+                println!(
+                    "  {}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                    t.surface, t.pos, t.sub1, t.sub2, t.sub3, t.base
+                );
+            }
+        }
+    }
+
+    /// Dumps filtered ProcToken output for a batch of sentences.
+    /// Run with: cargo test --lib grammar::tests::filtered -- --nocapture
+    #[test]
+    fn filtered() {
+        let sentences = vec![
+            "もっと早く起きればよかったのにな",
+        ];
+
+        for sentence in sentences {
+            println!("\n=== {} ===", sentence);
+            let tokens = analyze_sentence(sentence);
+            for t in &tokens {
+                println!(
+                    "  {}, base={}, pos={:?}, sub1={:?}, sub2={:?}",
+                    t.full, t.base, t.pos, t.sub1, t.sub2
+                );
+            }
         }
     }
 }
