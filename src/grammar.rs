@@ -39,6 +39,7 @@ pub struct ProcToken {
     pub base: String,
     pub pos: PartOfSpeech,
     pub sub1: PartOfSpeechSubcategory1,
+    pub sub2: PartOfSpeechSubcategory2,
     pub conjugation: Option<ConjugationFeatures>,
 }
 
@@ -98,6 +99,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let pos = token.pos.clone();
         let base = token.base.clone();
         let sub1=token.sub1.clone();
+        let sub2 = token.sub2;
         let mut conj = token.surface.clone();
 
         //conjugation detection
@@ -176,6 +178,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             base,
             pos: pos,
             sub1,
+            sub2,
             conjugation: Some(ConjugationFeatures {
                 negative,
                 past,
@@ -189,6 +192,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 negimperative,
             })
         });
+        i += 1;
     }
     filtered_tokens
 }
@@ -339,6 +343,53 @@ pub fn grammar() {
             }
             "5" => break,
             _ => println!("\nInvalid option. Please try again.\n"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dumps raw Lindera tokenization for a batch of sentences.
+    /// Run with: cargo test --lib grammar::tests::lindera_raw -- --nocapture
+    #[test]
+    fn lindera_raw() {
+        let sentences = vec![
+            "14つ", "十四つ",
+            "12月", "十二月",
+            "14ヶ月", "14か月",
+        ];
+
+        for sentence in sentences {
+            println!("\n=== {} ===", sentence);
+            let tokens = PARSER.parse(sentence).unwrap();
+            for t in &tokens {
+                println!(
+                    "  {}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                    t.surface, t.pos, t.sub1, t.sub2, t.sub3, t.base
+                );
+            }
+        }
+    }
+
+    /// Dumps filtered ProcToken output for a batch of sentences.
+    /// Run with: cargo test --lib grammar::tests::filtered -- --nocapture
+    #[test]
+    fn filtered() {
+        let sentences = vec![
+            "もっと早く起きればよかったのにな",
+        ];
+
+        for sentence in sentences {
+            println!("\n=== {} ===", sentence);
+            let tokens = analyze_sentence(sentence);
+            for t in &tokens {
+                println!(
+                    "  {}, base={}, pos={:?}, sub1={:?}, sub2={:?}",
+                    t.full, t.base, t.pos, t.sub1, t.sub2
+                );
+            }
         }
     }
 }

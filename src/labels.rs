@@ -1,8 +1,3 @@
-use lindera::LinderaResult;
-use lindera::dictionary::load_dictionary;
-use lindera::mode::Mode;
-use lindera::segmenter::Segmenter;
-use lindera::tokenizer::Tokenizer;
 use phf::phf_map;
 use std::sync::LazyLock;
 use strum_macros::AsRefStr;
@@ -137,7 +132,7 @@ pub static POS_SUB1_MAP: phf::Map<&'static str, PartOfSpeechSubcategory1> = phf_
     "*" => PartOfSpeechSubcategory1::X,
 };
 
-#[derive(Debug, Clone, Copy, AsRefStr)]
+#[derive(Debug, Clone, Copy, AsRefStr, PartialEq)]
 pub enum PartOfSpeechSubcategory2 {
     General,
     Name,
@@ -311,3 +306,46 @@ pub static C_FORM_MAP: phf::Map<&'static str, CForms> = phf_map! {
     "仮定形" => CForms::Conditional,
     "*" => CForms::X,
 };
+
+//sentence.rs
+#[derive(Debug, Clone)]
+pub enum ClauseRelation {
+    Reason,       // から、ので (ConjunctiveParticle)
+    Contrast,     // けど、が (ConjunctiveParticle)
+    Concessive,   // のに
+    Conditional,  // ば、たら
+    Continuation, // て
+    Sequence,     // てから
+    Simultaneous, // ながら
+    Temporal,     // 時 (when)
+    Until,        // まで after verb
+    Main,         // sentence-final
+    Modifier,     // relative clause
+    Quotation,    // と after verb
+    Evidential,   // によると (according to)
+    Ambiguous(Vec<ClauseRelation>), // When rule-based parsing cannot distinguish (e.g., conditional vs quotation と)
+}
+
+#[derive(Debug, Clone)]
+pub enum ParticleRole {
+    Subject,          // が
+    Object,           // を
+    Topic,            // は
+    IndirectObject,   // に (default)
+    Destination,      // に、へ
+    LocationAction,   // で (default)
+    Means,            // で
+    Source,           // から
+    Limit,            // まで
+    Also,             // も
+    ComparisonBase,   // より
+    Accompaniment,    // と
+    Listing,          // や、と
+    Temporal,         // に
+    Purpose,          // に
+    Agent,            // に
+    Adverbial,        // に
+    Scope,            // で
+    Approximate,      // ぐらい
+    Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
+}
