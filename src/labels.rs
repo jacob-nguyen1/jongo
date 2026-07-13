@@ -5,8 +5,9 @@ use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
 use phf::phf_map;
 use std::sync::LazyLock;
+use strum_macros::AsRefStr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr)]
 pub enum PartOfSpeech {
     Noun,
     Prefix,
@@ -54,7 +55,7 @@ pub static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
     "その他" => PartOfSpeech::Others,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr)]
 pub enum PartOfSpeechSubcategory1 {
     SuruVerb,
     NaiAdjStem,
@@ -136,7 +137,7 @@ pub static POS_SUB1_MAP: phf::Map<&'static str, PartOfSpeechSubcategory1> = phf_
     "*" => PartOfSpeechSubcategory1::X,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, AsRefStr)]
 pub enum PartOfSpeechSubcategory2 {
     General,
     Name,
@@ -172,7 +173,7 @@ pub static POS_SUB2_MAP: phf::Map<&'static str, PartOfSpeechSubcategory2> = phf_
     "*" => PartOfSpeechSubcategory2::X,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, AsRefStr)]
 pub enum PartOfSpeechSubcategory3 {
     General,
     Surname,
@@ -190,7 +191,7 @@ pub static POS_SUB3_MAP: phf::Map<&'static str, PartOfSpeechSubcategory3> = phf_
     "*" => PartOfSpeechSubcategory3::X,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr)]
 pub enum CTypes {
     AdjectiveAUODan,
     AdjectiveII,
@@ -213,6 +214,9 @@ pub enum CTypes {
     TsuVerb,
     AruVerb,
     KeigoAruVerb,
+    SuVerb,
+    TsuUVerb,
+    KuIVerb,
     IrregularTa,
     IrregularTai,
     IrregularNu,
@@ -247,6 +251,9 @@ pub static C_TYPE_MAP: phf::Map<&'static str, CTypes> = phf_map! {
     "下二・タ行" => CTypes::TsuVerb,
     "五段・ラ行アル" => CTypes::AruVerb,
     "五段・ラ行特殊" => CTypes::KeigoAruVerb,
+    "五段・サ行" => CTypes::SuVerb,
+    "五段・タ行" => CTypes::TsuUVerb,
+    "五段・カ行イ音便" => CTypes::KuIVerb,
     "特殊・タ" => CTypes::IrregularTa,
     "特殊・タイ" => CTypes::IrregularTai,
     "特殊・ヌ" => CTypes::IrregularNu,
@@ -258,7 +265,7 @@ pub static C_TYPE_MAP: phf::Map<&'static str, CTypes> = phf_map! {
     "*" => CTypes::X,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr)]
 pub enum CForms {
     ImperativeYo,
     AReruConnection,
