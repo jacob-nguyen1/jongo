@@ -5,7 +5,7 @@ use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
 use phf::phf_map;
 use std::sync::LazyLock;
-use crate::labels::{C_FORM_MAP, C_TYPE_MAP, CForms, CTypes::{self, RuVerb}, POS_MAP, POS_SUB1_MAP, POS_SUB2_MAP, POS_SUB3_MAP, PartOfSpeech, PartOfSpeechSubcategory1::{self, Unbound}, PartOfSpeechSubcategory2, PartOfSpeechSubcategory3};
+use crate::labels::{C_FORM_MAP, C_TYPE_MAP, CForms, CTypes::{self, RuVerb}, POS_MAP, POS_SUB1_MAP, POS_SUB2_MAP, POS_SUB3_MAP, PartOfSpeech::{self, Verb}, PartOfSpeechSubcategory1::{self, Unbound}, PartOfSpeechSubcategory2, PartOfSpeechSubcategory3};
 
 struct Token {
     surface: String,
@@ -29,6 +29,8 @@ pub struct ConjugationFeatures {
     pub volitional: bool,
     pub potential: bool,
     pub causative: bool,
+    pub conditional: bool,
+    pub negimperative: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +72,12 @@ impl ProcToken{
                 if conj.causative {
                     parts.push("causative");
                 }
+                if conj.conditional {
+                    parts.push("conditional");
+                }
+                if conj.negimperative {
+                    parts.push("negimperative");
+                }
                 if parts.is_empty() {
                     "none".to_string()
                 } else {
@@ -103,12 +111,19 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let mut volitional=false;
         let mut potential=false;
         let mut causative=false;
+        let mut conditional=false;
+        let mut negimperative=false;
         // if token.cform != CForms::Imperfective && token.sub1 != PartOfSpeechSubcategory1::Suffix && token.ctype==CTypes::RuVerb{
         //     if line[i].base.as_str().ends_with("られる") || line[i].base.as_str().ends_with("せる") || line[i].base.as_str().ends_with("れる") || line[i].base.as_str().ends_with("ける") || line[i].base.as_str().ends_with("てる") || line[i].base.as_str().ends_with("へる") || line[i].base.as_str().ends_with("める") || line[i].base.as_str().ends_with("ねる") || line[i].base.as_str().ends_with("できる") || line[i].base.as_str().ends_with("べる") || line[i].base.as_str().ends_with("える"){potential = true};
         // }
         if(token.base=="できる"){
             potential=true;
         }
+        // if(token.base=="な"){
+        //     if line[i-1].pos==PartOfSpeech::Verb{
+        //         negimperative=true;
+        //     }
+        // }
         if token.cform == CForms::Continuative || token.cform == CForms::Imperfective || token.cform == CForms::AUConnection {
             let mut j=i;
             j+=1;
@@ -117,6 +132,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 negative |= line[j].ctype == CTypes::IrregularNai;
                 desiderative |= line[j].ctype == CTypes::IrregularTai;
                 volitional |= line[j].ctype == CTypes::Invariable;
+                conditional |= line[j].cform == CForms::Conditional;
                 if line[j].base.as_str().ends_with("させる") || line[j].base.ends_with("せる") {
                     causative=true;
                 }
@@ -132,41 +148,30 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 negative |= line[j].ctype == CTypes::IrregularNai;
                 desiderative |= line[j].ctype == CTypes::IrregularTai;
                 volitional |= line[j].ctype == CTypes::Invariable;
+                conditional |= line[j].cform == CForms::Conditional;
                 if line[j].base.as_str().ends_with("させる") || line[j].base.ends_with("せる") {
                     causative=true;
                 }
                 else if line[j].base.as_str().ends_with("られる") || line[j].base.as_str().ends_with("せる") || line[j].base.as_str().ends_with("れる") || line[j].base.as_str().ends_with("ける") || line[j].base.as_str().ends_with("てる") || line[j].base.as_str().ends_with("へる") || line[j].base.as_str().ends_with("める") || line[j].base.as_str().ends_with("ねる") || line[j].base.as_str().ends_with("できる") || line[j].base.as_str().ends_with("べる") || line[j].base.as_str().ends_with("える") {potential = true};           
             }
         }
+        if i<line.len() && line[i].pos==PartOfSpeech::Verb{
+            if line[i+1].base=="な"{
+                negimperative=true;
+                conj+="な";
+                i+=1;
+            }
+        } // detect negimperative for verbs followed by "な" (e.g., 食べるな)
         //conjugation detection
-
-        let mut should_merge = false;
-        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
-            should_merge = true;
-        } else if i + 1 < line.len() {
-            let next_token = &line[i + 1];
-            if next_token.pos == PartOfSpeech::AuxiliaryVerb
-               || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle
-                   && (next_token.surface == "じゃ" || next_token.surface == "では"))
-            {
-                should_merge = true;
+        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb){
+            i+=1;
+            while i < line.len() && line[i].pos != PartOfSpeech::Symbol && line[i].sub1 != PartOfSpeechSubcategory1::Unbound{
+                conj = conj + &line[i].surface;
+                i+=1;
             }
         }
-        
-        if should_merge {
-            let mut j = i + 1;
-            while j < line.len()
-                && (line[j].pos == PartOfSpeech::AuxiliaryVerb
-                    || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
-                    || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
-                        && (line[j].surface == "て" || line[j].surface == "で"))
-                    || (line[j].sub1 == PartOfSpeechSubcategory1::AdverbialParticle
-                        && (line[j].surface == "じゃ" || line[j].surface == "では")))
-            {
-                conj = conj + &line[j].surface;
-                j += 1;
-            }
-            i = j - 1;
+        else{
+            i+=1;
         }
         filtered_tokens.push(ProcToken {
             full: conj,
@@ -183,6 +188,8 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 volitional,
                 potential,
                 causative,
+                conditional,
+                negimperative,
             })
         });
         i += 1;
@@ -286,7 +293,7 @@ pub fn grammar() {
     let mut choice: String;
     match inp.trim() {
         //"1" => choice = "私は毎朝早く起きて、新鮮なコーヒーを飲みながら、窓から見える庭の美しい景色を眺めるのが好きです。".into(),
-        "1" => choice = "食べる 食べた 食べている 食べていた 食べたい 食べたくない 食べよう 食べられる 食べさせる 食べるな 食べて 食べない 食べなかった 食べていない 食べていなかった 食べたくなかった 食べようとしない 食べられない 食べさせない".into(),
+        "1" => choice = "食べる 食べた 食べている 食べていた 食べたい 食べたくない 食べよう 食べられる 食べさせる 食べるな 食べて 食べながら 食べない 食べなかった 食べていない 食べていなかった 食べたくなかった 食べようとしない 食べられない 食べさせない 食べたら".into(),
         "2" => {
             println!("Input your text:");
             let mut input = String::new();
