@@ -5,15 +5,7 @@ use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
 use phf::phf_map;
 use std::sync::LazyLock;
-use crate::labels::{C_FORM_MAP, C_TYPE_MAP, CForms, CTypes, POS_MAP, POS_SUB1_MAP, POS_SUB2_MAP, POS_SUB3_MAP, PartOfSpeech, PartOfSpeechSubcategory1::{self, Unbound}, PartOfSpeechSubcategory2, PartOfSpeechSubcategory3};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Conjugations {
-    NonPast,
-    PresentContinuous,
-    Past,
-    PastContinuous,
-}
+use crate::labels::{C_FORM_MAP, C_TYPE_MAP, CForms, CTypes::{self, RuVerb}, POS_MAP, POS_SUB1_MAP, POS_SUB2_MAP, POS_SUB3_MAP, PartOfSpeech, PartOfSpeechSubcategory1::{self, Unbound}, PartOfSpeechSubcategory2, PartOfSpeechSubcategory3};
 
 struct Token {
     surface: String,
@@ -34,6 +26,9 @@ pub struct ConjugationFeatures {
     pub continuous: bool,
     pub teform: bool,
     pub desiderative: bool,
+    pub volitional: bool,
+    pub potential: bool,
+    pub causative: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +61,15 @@ impl ProcToken{
                 if conj.desiderative {
                     parts.push("desiderative");
                 }
+                if conj.volitional {
+                    parts.push("volitional");
+                }
+                if conj.potential {
+                    parts.push("potential");
+                }
+                if conj.causative {
+                    parts.push("causative");
+                }
                 if parts.is_empty() {
                     "none".to_string()
                 } else {
@@ -96,15 +100,29 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let mut continuous=false;
         let mut teform=false;
         let mut desiderative=false;
-        if token.cform == CForms::Continuative || token.cform == CForms::Imperfective{
+        let mut volitional=false;
+        let mut potential=false;
+        let mut causative=false;
+        // if token.cform != CForms::Imperfective && token.sub1 != PartOfSpeechSubcategory1::Suffix && token.ctype==CTypes::RuVerb{
+        //     if line[i].base.as_str().ends_with("られる") || line[i].base.as_str().ends_with("せる") || line[i].base.as_str().ends_with("れる") || line[i].base.as_str().ends_with("ける") || line[i].base.as_str().ends_with("てる") || line[i].base.as_str().ends_with("へる") || line[i].base.as_str().ends_with("める") || line[i].base.as_str().ends_with("ねる") || line[i].base.as_str().ends_with("できる") || line[i].base.as_str().ends_with("べる") || line[i].base.as_str().ends_with("える"){potential = true};
+        // }
+        if(token.base=="できる"){
+            potential=true;
+        }
+        if token.cform == CForms::Continuative || token.cform == CForms::Imperfective || token.cform == CForms::AUConnection {
             let mut j=i;
             j+=1;
             while j<line.len() && (line[j].sub1==PartOfSpeechSubcategory1::ConjuctiveParticle || line[j].cform==CForms::Continuative || line[j].cform==CForms::Imperfective){
                 teform|= line[j].sub1==PartOfSpeechSubcategory1::ConjuctiveParticle;
                 negative |= line[j].ctype == CTypes::IrregularNai;
                 desiderative |= line[j].ctype == CTypes::IrregularTai;
-                if let Some(next) = line.get(j + 1) {
-                    if next.sub1 == PartOfSpeechSubcategory1::Unbound { break; } //detect new word after te
+                volitional |= line[j].ctype == CTypes::Invariable;
+                if line[j].base.as_str().ends_with("させる") || line[j].base.ends_with("せる") {
+                    causative=true;
+                }
+                else if line[j].base.as_str().ends_with("られる") || line[j].base.as_str().ends_with("せる") || line[j].base.as_str().ends_with("れる") || line[j].base.as_str().ends_with("ける") || line[j].base.as_str().ends_with("てる") || line[j].base.as_str().ends_with("へる") || line[j].base.as_str().ends_with("める") || line[j].base.as_str().ends_with("ねる") || line[j].base.as_str().ends_with("できる") || line[j].base.as_str().ends_with("べる") || line[j].base.as_str().ends_with("える") {potential = true};
+                if j<line.len(){
+                    if line[j+1].sub1 == PartOfSpeechSubcategory1::Unbound { break; } //detect new word after te
                 }
                 j+=1;
             }
@@ -113,6 +131,11 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 past |= line[j].ctype == CTypes::IrregularTa;
                 negative |= line[j].ctype == CTypes::IrregularNai;
                 desiderative |= line[j].ctype == CTypes::IrregularTai;
+                volitional |= line[j].ctype == CTypes::Invariable;
+                if line[j].base.as_str().ends_with("させる") || line[j].base.ends_with("せる") {
+                    causative=true;
+                }
+                else if line[j].base.as_str().ends_with("られる") || line[j].base.as_str().ends_with("せる") || line[j].base.as_str().ends_with("れる") || line[j].base.as_str().ends_with("ける") || line[j].base.as_str().ends_with("てる") || line[j].base.as_str().ends_with("へる") || line[j].base.as_str().ends_with("める") || line[j].base.as_str().ends_with("ねる") || line[j].base.as_str().ends_with("できる") || line[j].base.as_str().ends_with("べる") || line[j].base.as_str().ends_with("える") {potential = true};           
             }
         }
         //conjugation detection
@@ -157,6 +180,9 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 continuous,
                 teform,
                 desiderative,
+                volitional,
+                potential,
+                causative,
             })
         });
         i += 1;
@@ -260,7 +286,7 @@ pub fn grammar() {
     let mut choice: String;
     match inp.trim() {
         //"1" => choice = "私は毎朝早く起きて、新鮮なコーヒーを飲みながら、窓から見える庭の美しい景色を眺めるのが好きです。".into(),
-        "1" => choice = "食べる 食べた 食べている 食べていた 食べたい 食べたくない 食べよう 食べられる 食べさせる 食べるな 食べて 食べながら 食べない 食べなかった 食べていない 食べていなかった 食べたくなかった 食べようとしない 食べられない 食べさせない".into(),
+        "1" => choice = "食べる 食べた 食べている 食べていた 食べたい 食べたくない 食べよう 食べられる 食べさせる 食べるな 食べて 食べない 食べなかった 食べていない 食べていなかった 食べたくなかった 食べようとしない 食べられない 食べさせない".into(),
         "2" => {
             println!("Input your text:");
             let mut input = String::new();

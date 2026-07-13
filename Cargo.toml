@@ -10,6 +10,8 @@ lindera = { version = "3.0.7", features = ["embed-ipadic"] }
 phf = { version = "0.13.1", features = ["macros"] }
 wasm-bindgen = "0.2.123"
 web-sys = { version = "0.3.100", features = ["Window", "Document", "Element", "HtmlElement", "Node", "MouseEvent", "KeyboardEvent", "EventTarget", "console", "Range", "CaretPosition", "DomRect", "Selection", "NodeList", "CssStyleDeclaration"] }
+strum = "0.26"
+strum_macros = "0.26"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
