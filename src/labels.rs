@@ -132,7 +132,7 @@ pub static POS_SUB1_MAP: phf::Map<&'static str, PartOfSpeechSubcategory1> = phf_
     "*" => PartOfSpeechSubcategory1::X,
 };
 
-#[derive(Debug, Clone, Copy, AsRefStr)]
+#[derive(Debug, Clone, Copy, AsRefStr, PartialEq)]
 pub enum PartOfSpeechSubcategory2 {
     General,
     Name,
