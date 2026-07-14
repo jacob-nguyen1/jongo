@@ -155,23 +155,63 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 else if line[j].base.as_str().ends_with("られる") || line[j].base.as_str().ends_with("せる") || line[j].base.as_str().ends_with("れる") || line[j].base.as_str().ends_with("ける") || line[j].base.as_str().ends_with("てる") || line[j].base.as_str().ends_with("へる") || line[j].base.as_str().ends_with("める") || line[j].base.as_str().ends_with("ねる") || line[j].base.as_str().ends_with("できる") || line[j].base.as_str().ends_with("べる") || line[j].base.as_str().ends_with("える") {potential = true};           
             }
         }
-        if i<line.len() && line[i].pos==PartOfSpeech::Verb{
-            if line[i+1].base=="な"{
-                negimperative=true;
-                conj+="な";
-                i+=1;
-            }
-        } // detect negimperative for verbs followed by "な" (e.g., 食べるな)
-        //conjugation detection
-        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb){
-            i+=1;
-            while i < line.len() && line[i].pos != PartOfSpeech::Symbol && line[i].sub1 != PartOfSpeechSubcategory1::Unbound{
-                conj = conj + &line[i].surface;
-                i+=1;
+        // detect negimperative for verbs followed by "な" (e.g., 食べるな)
+        if token.pos == PartOfSpeech::Verb && i + 1 < line.len() && line[i + 1].base == "な" {
+            negimperative = true;
+            conj += "な";
+        }
+
+        // conjugation detection
+        let mut should_merge = false;
+        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
+            should_merge = true;
+        } else if i + 1 < line.len() {
+            let next_token = &line[i + 1];
+            if next_token.pos == PartOfSpeech::AuxiliaryVerb
+               || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle
+                   && (next_token.surface == "じゃ" || next_token.surface == "では"))
+            {
+                should_merge = true;
             }
         }
-        else{
-            i+=1;
+
+        if should_merge {
+            let mut j = i + 1;
+            // If negimperative is true, j should skip the "な"
+            if negimperative {
+                j += 1;
+            }
+
+            while j < line.len()
+                && (line[j].pos == PartOfSpeech::AuxiliaryVerb
+                    || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
+                        && (line[j].surface == "て" || line[j].surface == "で"))
+                    || (line[j].sub1 == PartOfSpeechSubcategory1::AdverbialParticle
+                        && (line[j].surface == "じゃ" || line[j].surface == "では"))
+                    || ((line[j].sub1 == PartOfSpeechSubcategory1::Bound || line[j].sub1 == PartOfSpeechSubcategory1::DependentVerb)
+                        && (line[j].base == "いる" || line[j].base == "い" || line[j].base == "おる" || line[j].base == "おり")))
+            {
+                conj = conj + &line[j].surface;
+                j += 1;
+            }
+            i = j - 1;
+        } else if negimperative {
+            i += 1;
+        } else if pos == PartOfSpeech::Noun {
+            let mut j = i + 1;
+            while j < line.len() {
+                let nxt = &line[j];
+                if (sub1 == PartOfSpeechSubcategory1::Number && nxt.pos == PartOfSpeech::Noun && nxt.sub1 == PartOfSpeechSubcategory1::Number)
+                   || nxt.sub1 == PartOfSpeechSubcategory1::Suffix
+                {
+                    conj = conj + &nxt.surface;
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            i = j - 1;
         }
         filtered_tokens.push(ProcToken {
             full: conj,
