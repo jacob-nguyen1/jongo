@@ -155,7 +155,10 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 j+=1;
             }
             if j<line.len(){ //look at last token to see if conjugation
-                if teform && line[j].sub1!=PartOfSpeechSubcategory1::ConjuctiveParticle {continuous=true};
+                if teform && line[j].sub1!=PartOfSpeechSubcategory1::ConjuctiveParticle {
+                    continuous = true;
+                    teform = false;
+                }
                 past |= line[j].ctype == CTypes::IrregularTa;
                 negative |= line[j].ctype == CTypes::IrregularNai;
                 desiderative |= line[j].ctype == CTypes::IrregularTai;
