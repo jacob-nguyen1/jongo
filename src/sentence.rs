@@ -472,7 +472,7 @@ fn package_clause(mut chunks: Vec<Chunk>, relation: ClauseRelation, connective: 
         // Fallback for trailing ending particles on an empty clause
         return Clause {
             predicate: Chunk {
-                word: ProcToken { full: "".to_string(), base: "".to_string(), pos: PartOfSpeech::Symbol, sub1: PartOfSpeechSubcategory1::X, sub2: PartOfSpeechSubcategory2::X, conjugation: None },
+                word: ProcToken { full: "".to_string(), base: "".to_string(), pos: PartOfSpeech::Symbol, sub1: PartOfSpeechSubcategory1::X, sub2: PartOfSpeechSubcategory2::X, conjugation: None, staircase: None },
                 particle: None, secondary_particle: None, particle_role: None, modifiers: Vec::new(), is_head: true
             },
             relation, connective, ending_particles

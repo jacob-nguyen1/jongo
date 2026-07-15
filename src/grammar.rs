@@ -32,6 +32,12 @@ pub struct ConjugationFeatures {
     pub negimperative: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaircaseStep {
+    pub text: String,
+    pub description: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProcToken {
     pub full: String,
@@ -40,6 +46,7 @@ pub struct ProcToken {
     pub sub1: PartOfSpeechSubcategory1,
     pub sub2: PartOfSpeechSubcategory2,
     pub conjugation: Option<ConjugationFeatures>,
+    pub staircase: Option<Vec<StaircaseStep>>,
 }
 
 impl ProcToken{
@@ -109,6 +116,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 sub1: PartOfSpeechSubcategory1::Bound,
                 sub2: PartOfSpeechSubcategory2::X,
                 conjugation: None,
+                staircase: None,
             });
             i += 3;
             continue;
@@ -154,20 +162,21 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 }
                 j+=1;
             }
-            if j<line.len(){ //look at last token to see if conjugation
-                if teform && line[j].sub1!=PartOfSpeechSubcategory1::ConjuctiveParticle {
+            if j > 0 { // look at last token of the conjugation sequence
+                let last_conj_token = &line[j-1];
+                if teform && last_conj_token.sub1 != PartOfSpeechSubcategory1::ConjuctiveParticle {
                     continuous = true;
                     teform = false;
                 }
-                past |= line[j].ctype == CTypes::IrregularTa;
-                negative |= line[j].ctype == CTypes::IrregularNai;
-                desiderative |= line[j].ctype == CTypes::IrregularTai;
-                volitional |= line[j].ctype == CTypes::Invariable;
-                conditional |= line[j].cform == CForms::Conditional;
-                if line[j].base.as_str().ends_with("させる") || line[j].base.ends_with("せる") {
+                past |= last_conj_token.ctype == CTypes::IrregularTa;
+                negative |= last_conj_token.ctype == CTypes::IrregularNai;
+                desiderative |= last_conj_token.ctype == CTypes::IrregularTai;
+                volitional |= last_conj_token.ctype == CTypes::Invariable;
+                conditional |= last_conj_token.cform == CForms::Conditional;
+                if last_conj_token.base.as_str().ends_with("させる") || last_conj_token.base.ends_with("せる") {
                     causative=true;
                 }
-                else if line[j].base.as_str().ends_with("られる") || line[j].base.as_str().ends_with("せる") || line[j].base.as_str().ends_with("れる") || line[j].base.as_str().ends_with("ける") || line[j].base.as_str().ends_with("てる") || line[j].base.as_str().ends_with("へる") || line[j].base.as_str().ends_with("める") || line[j].base.as_str().ends_with("ねる") || line[j].base.as_str().ends_with("できる") || line[j].base.as_str().ends_with("べる") || line[j].base.as_str().ends_with("える") {potential = true};           
+                else if last_conj_token.base.as_str().ends_with("られる") || last_conj_token.base.as_str().ends_with("せる") || last_conj_token.base.as_str().ends_with("れる") || last_conj_token.base.as_str().ends_with("ける") || last_conj_token.base.as_str().ends_with("てる") || last_conj_token.base.as_str().ends_with("へる") || last_conj_token.base.as_str().ends_with("める") || last_conj_token.base.as_str().ends_with("ねる") || last_conj_token.base.as_str().ends_with("できる") || last_conj_token.base.as_str().ends_with("べる") || last_conj_token.base.as_str().ends_with("える") {potential = true};           
             }
         }
         // detect negimperative for verbs followed by "な" (e.g., 食べるな)
@@ -217,7 +226,15 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             base
         };
 
+        let mut staircase: Option<Vec<StaircaseStep>> = None;
         if should_merge {
+            let mut steps = Vec::new();
+            steps.push(StaircaseStep {
+                text: base.clone(),
+                description: "Base".to_string(),
+            });
+            let mut cumulative_surface = token.surface.clone();
+
             let mut j = i + 1;
             // If negimperative is true, j should skip the "な"
             if negimperative {
@@ -235,8 +252,33 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                         && (line[j].base == "いる" || line[j].base == "い" || line[j].base == "おる" || line[j].base == "おり"))
                     || (line[j-1].surface == "で" && line[j-1].base == "だ" && line[j].base == "ある"))
             {
-                conj = conj + &line[j].surface;
+                let next_token = &line[j];
+                
+                let desc = match next_token.base.as_str() {
+                    "ます" => "Polite",
+                    "た" | "だ" => "Past",
+                    "ない" | "ん" | "ぬ" => "Negative",
+                    "たい" => "Desire",
+                    "られる" => "Potential / Passive",
+                    "れる" => "Passive",
+                    "せる" | "させる" => "Causative",
+                    "て" | "で" => "Te-Form",
+                    "いる" | "おる" => "Continuous",
+                    "ば" | "なら" | "たら" => "Conditional",
+                    _ => "Auxiliary",
+                };
+
+                steps.push(StaircaseStep {
+                    text: format!("{}{}", cumulative_surface, next_token.base),
+                    description: desc.to_string(),
+                });
+                
+                cumulative_surface.push_str(&next_token.surface);
+                conj = conj + &next_token.surface;
                 j += 1;
+            }
+            if steps.len() > 1 {
+                staircase = Some(steps);
             }
             i = j - 1;
         } else if negimperative {
@@ -273,7 +315,8 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 causative,
                 conditional,
                 negimperative,
-            })
+            }),
+            staircase,
         });
         i += 1;
     }
