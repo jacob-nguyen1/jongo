@@ -170,8 +170,9 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
             // === MODIFIER DETECTION ===
             
             // Adjective て-form Continuation split
-            ProcToken { pos: PartOfSpeech::Adjective, full, .. }
-                if full.ends_with("て") || full.ends_with("で") => {
+            ProcToken { pos: PartOfSpeech::Adjective, conjugation, full, .. }
+                if conjugation.as_ref().map_or(false, |c| c.teform)
+                && (full.ends_with("て") || full.ends_with("で")) => {
                 clauses.push(package_clause(chunks, ClauseRelation::Continuation, None, std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
                 i += 1;
@@ -254,15 +255,6 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                     };
                     lim_chunk.is_head = false;
 
-                    // F2: Skip non-head chunks in modifier attachment (bubble up to the real head)
-                    // We currently partition: eager modifiers (Adjectives, Clauses) bubble up,
-                    // but Limitation modifiers stay nested. This is a temporary structural default
-                    // pending a larger architectural decision on attachment ambiguity.
-                    let (eager, nested): (Vec<_>, Vec<_>) = lim_chunk.modifiers.into_iter().partition(|m| {
-                        matches!(m, Modifier::AdjectiveChunk(_) | Modifier::Clause(_))
-                    });
-                    lim_chunk.modifiers = nested;
-                    pending_modifiers.extend(eager);
                     
                     pending_modifiers.push(Modifier::Limitation(Box::new(lim_chunk)));
                 }
@@ -325,8 +317,9 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
 
             // te-form verb marks continuation
             // りんごを食べて水を飲んだ
-            ProcToken { pos: PartOfSpeech::Verb, full, .. }
-                if (full.ends_with("て") || full.ends_with("で"))
+            ProcToken { pos: PartOfSpeech::Verb, conjugation, full, .. }
+                if conjugation.as_ref().map_or(false, |c| c.teform)
+                && (full.ends_with("て") || full.ends_with("で"))
                 && next_str != Some("は")
                 && next_str != Some("も")
                 && !matches!(

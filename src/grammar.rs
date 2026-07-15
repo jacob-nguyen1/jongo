@@ -149,7 +149,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                     causative=true;
                 }
                 else if line[j].base.as_str().ends_with("られる") || line[j].base.as_str().ends_with("せる") || line[j].base.as_str().ends_with("れる") || line[j].base.as_str().ends_with("ける") || line[j].base.as_str().ends_with("てる") || line[j].base.as_str().ends_with("へる") || line[j].base.as_str().ends_with("める") || line[j].base.as_str().ends_with("ねる") || line[j].base.as_str().ends_with("できる") || line[j].base.as_str().ends_with("べる") || line[j].base.as_str().ends_with("える") {potential = true};
-                if j<line.len(){
+                if j + 1 < line.len() {
                     if line[j+1].sub1 == PartOfSpeechSubcategory1::Unbound { break; } //detect new word after te
                 }
                 j+=1;
@@ -205,6 +205,14 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 should_merge = true;
             }
         }
+        
+        // G5: Handle 'である' merging explicitly
+        let base = if token.surface == "で" && token.base == "だ" && i + 1 < line.len() && line[i+1].base == "ある" {
+            should_merge = true;
+            "である".to_string() // Override base so JMdict hits 'である'
+        } else {
+            base
+        };
 
         if should_merge {
             let mut j = i + 1;
@@ -221,7 +229,8 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                     || (line[j].sub1 == PartOfSpeechSubcategory1::AdverbialParticle
                         && (line[j].surface == "じゃ" || line[j].surface == "では"))
                     || ((line[j].sub1 == PartOfSpeechSubcategory1::Bound || line[j].sub1 == PartOfSpeechSubcategory1::DependentVerb)
-                        && (line[j].base == "いる" || line[j].base == "い" || line[j].base == "おる" || line[j].base == "おり")))
+                        && (line[j].base == "いる" || line[j].base == "い" || line[j].base == "おる" || line[j].base == "おり"))
+                    || (line[j-1].surface == "で" && line[j-1].base == "だ" && line[j].base == "ある"))
             {
                 conj = conj + &line[j].surface;
                 j += 1;
