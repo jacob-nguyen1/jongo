@@ -349,3 +349,95 @@ pub enum ParticleRole {
     Approximate,      // ぐらい
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
+
+impl ClauseRelation {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ClauseRelation::Reason => "Reason",
+            ClauseRelation::Contrast => "Contrast",
+            ClauseRelation::Concessive => "Concessive",
+            ClauseRelation::Conditional => "Conditional",
+            ClauseRelation::Continuation => "Continuation",
+            ClauseRelation::Sequence => "Sequence",
+            ClauseRelation::Simultaneous => "Simultaneous",
+            ClauseRelation::Temporal => "Temporal",
+            ClauseRelation::Until => "Until",
+            ClauseRelation::Main => "Main",
+            ClauseRelation::Modifier => "Modifier",
+            ClauseRelation::Quotation => "Quotation",
+            ClauseRelation::Evidential => "Evidential",
+            ClauseRelation::Ambiguous(_) => "Ambiguous",
+        }
+    }
+
+    pub fn color(&self) -> &'static str {
+        match self {
+            ClauseRelation::Main => "#888",
+            ClauseRelation::Reason => "#5b7c99",
+            ClauseRelation::Contrast => "#9a6b4a",
+            ClauseRelation::Concessive => "#8b5a7a",
+            ClauseRelation::Conditional => "#6b7a4a",
+            ClauseRelation::Continuation => "#5a8a7a",
+            ClauseRelation::Sequence => "#5a7a8a",
+            ClauseRelation::Simultaneous => "#7a8a5a",
+            ClauseRelation::Temporal => "#6a7a99",
+            ClauseRelation::Until => "#8a6a5a",
+            ClauseRelation::Modifier => "#7a6b99",
+            ClauseRelation::Quotation => "#6a6a8a",
+            ClauseRelation::Evidential => "#5a6a8a",
+            ClauseRelation::Ambiguous(_) => "#999",
+        }
+    }
+}
+
+impl ParticleRole {
+    pub fn badge(&self) -> String {
+        match self {
+            ParticleRole::Subject => "Subject".into(),
+            ParticleRole::Object => "Object".into(),
+            ParticleRole::Topic => "Topic".into(),
+            ParticleRole::IndirectObject => "IndirectObject".into(),
+            ParticleRole::Destination => "Destination".into(),
+            ParticleRole::LocationAction => "LocationAction".into(),
+            ParticleRole::Means => "Means".into(),
+            ParticleRole::Source => "Source".into(),
+            ParticleRole::Limit => "Limit".into(),
+            ParticleRole::Also => "Also".into(),
+            ParticleRole::ComparisonBase => "ComparisonBase".into(),
+            ParticleRole::Accompaniment => "Accompaniment".into(),
+            ParticleRole::Listing => "Listing".into(),
+            ParticleRole::Temporal => "Temporal".into(),
+            ParticleRole::Purpose => "Purpose".into(),
+            ParticleRole::Agent => "Agent".into(),
+            ParticleRole::Adverbial => "Adverbial".into(),
+            ParticleRole::Scope => "Scope".into(),
+            ParticleRole::Approximate => "Approximate".into(),
+            ParticleRole::Ambiguous(_) => "Ambiguous".into(),
+        }
+    }
+
+    pub fn explanation(&self) -> &'static str {
+        match self {
+            ParticleRole::Subject => "marks the doer of the action",
+            ParticleRole::Object => "marks what the action is done to",
+            ParticleRole::Topic => "marks what the sentence is about",
+            ParticleRole::IndirectObject => "marks the receiver of the action",
+            ParticleRole::Destination => "marks the direction or endpoint of movement",
+            ParticleRole::LocationAction => "marks where the action takes place",
+            ParticleRole::Means => "marks the tool or method used",
+            ParticleRole::Source => "marks the starting point (from)",
+            ParticleRole::Limit => "marks the endpoint or extent (until)",
+            ParticleRole::Also => "adds 'also / too' to the marked word",
+            ParticleRole::ComparisonBase => "marks the standard of comparison (than)",
+            ParticleRole::Accompaniment => "marks 'together with'",
+            ParticleRole::Listing => "marks a non-exhaustive list (A and B, etc.)",
+            ParticleRole::Temporal => "marks a point in time",
+            ParticleRole::Purpose => "marks the purpose of movement",
+            ParticleRole::Agent => "marks the agent in passive or causative",
+            ParticleRole::Adverbial => "turns the phrase into an adverbial",
+            ParticleRole::Scope => "marks the scope or domain of a state",
+            ParticleRole::Approximate => "marks an approximate amount or extent",
+            ParticleRole::Ambiguous(_) => "multiple roles possible",
+        }
+    }
+}

@@ -1,4 +1,5 @@
 use crate::jmnedict::{self, ProperNounType};
+use crate::labels::PartOfSpeech;
 
 /// The source dictionary a result came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +20,7 @@ pub struct LookupResult {
 /// Query JMdict (common vocabulary) and optionally JMnedict (proper nouns).
 pub fn lookup(
     word: &str,
-    pos: crate::grammar::PartOfSpeech,
+    pos: PartOfSpeech,
     is_proper_noun: bool,
 ) -> Vec<LookupResult> {
     let mut results = lookup_jmdict(word, pos);
@@ -42,7 +43,7 @@ pub fn lookup(
 /// Returns only the first (highest-priority) result.
 pub fn lookup_first(
     word: &str,
-    pos: crate::grammar::PartOfSpeech,
+    pos: PartOfSpeech,
     is_proper_noun: bool,
 ) -> Option<(String, Vec<String>)> {
     lookup(word, pos, is_proper_noun)
@@ -54,13 +55,13 @@ pub fn lookup_first(
 /// Returns the first result with full provenance metadata.
 pub fn lookup_first_result(
     word: &str,
-    pos: crate::grammar::PartOfSpeech,
+    pos: PartOfSpeech,
     is_proper_noun: bool,
 ) -> Option<LookupResult> {
     lookup(word, pos, is_proper_noun).into_iter().next()
 }
 
-fn lookup_jmdict(word: &str, pos: crate::grammar::PartOfSpeech) -> Vec<LookupResult> {
+fn lookup_jmdict(word: &str, pos: PartOfSpeech) -> Vec<LookupResult> {
     for entry in jmdict::entries() {
         let matches_form = entry.kanji_elements().any(|k| k.text == word)
             || entry.reading_elements().any(|r| r.text == word);
@@ -136,7 +137,7 @@ pub fn debug_word(word: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grammar::PartOfSpeech;
+    use crate::labels::PartOfSpeech;
 
     #[test]
     fn test_leaf_noun() {

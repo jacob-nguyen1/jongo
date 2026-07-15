@@ -966,10 +966,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tar",
- "ureq",
  "strum 0.26.3",
  "strum_macros 0.26.4",
+ "tar",
+ "ureq",
  "wasm-bindgen",
  "web-sys",
 ]

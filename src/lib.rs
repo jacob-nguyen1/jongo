@@ -10,8 +10,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::console;
 
-use crate::grammar::{PartOfSpeechSubcategory1, ProcToken};
-use crate::sentence::{Chunk, Clause, Modifier, ParticleRole, Sentence};
+use crate::grammar::ProcToken;
+use crate::labels::{PartOfSpeechSubcategory1, ParticleRole};
+use crate::sentence::{Chunk, Clause, Modifier, Sentence};
 
 const SENTENCE_DELIMITERS: [u16; 4] = ['.' as u16, '。' as u16, '\n' as u16, '…' as u16];
 
@@ -415,9 +416,7 @@ fn render_clause(clause: &Clause, details: &mut Vec<String>) -> String {
         "<div style='border:1px solid {color};border-radius:4px;margin-bottom:10px;padding:6px 8px'>\
          <div style='font-size:10px;color:{color};margin-bottom:6px'>{label}</div>"
     );
-    for chunk in &clause.chunks {
-        html.push_str(&render_chunk_group(chunk, 0, details));
-    }
+    html.push_str(&render_chunk_group(&clause.predicate, 0, details));
     if let Some(conn) = &clause.connective {
         html.push_str(&format!(
             "<div style='margin-top:6px;font-size:14px;font-weight:600;color:{color}'>{}</div>",
@@ -447,7 +446,9 @@ fn render_chunk_group(chunk: &Chunk, depth: usize, details: &mut Vec<String>) ->
 
 fn render_modifier(modifier: &Modifier, depth: usize, details: &mut Vec<String>) -> String {
     match modifier {
-        Modifier::Adjective(tok) => render_row(tok, None, None, depth, details),
+        Modifier::NounChunk(chunk)
+        | Modifier::AdjectiveChunk(chunk)
+        | Modifier::AdverbChunk(chunk) => render_chunk_group(chunk, depth, details),
         Modifier::Limitation(lim) => render_row(
             &lim.word,
             lim.particle.as_ref(),
@@ -455,12 +456,11 @@ fn render_modifier(modifier: &Modifier, depth: usize, details: &mut Vec<String>)
             depth,
             details,
         ),
-        // Recursively break modifier clauses into individual token rows,
-        // indented one level deeper than their head.
-        Modifier::Clause(clause) => {
+        Modifier::Clause(clause) => render_chunk_group(&clause.predicate, depth, details),
+        Modifier::Quotation(sentence) => {
             let mut html = String::new();
-            for chunk in &clause.chunks {
-                html.push_str(&render_chunk_group(chunk, depth, details));
+            for clause in &sentence.clauses {
+                html.push_str(&render_clause(clause, details));
             }
             html
         }
@@ -588,13 +588,13 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, role: Option<&P
 
     if let Some(conj) = &word.conjugation {
         let mut flags: Vec<&str> = Vec::new();
-        if conj.is_negative {
+        if conj.negative {
             flags.push("Negative");
         }
-        if conj.is_past {
+        if conj.past {
             flags.push("Past");
         }
-        if conj.is_te_form {
+        if conj.teform {
             flags.push("Te-form");
         }
         if !flags.is_empty() {
