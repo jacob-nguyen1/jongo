@@ -1,5 +1,5 @@
 use crate::labels::{PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2, ClauseRelation, ParticleRole};
-use crate::grammar::{analyze_sentence, ProcToken};
+use crate::grammar::{ProcToken};
 
 #[derive(Debug)]
 pub struct Sentence {
@@ -96,6 +96,116 @@ fn extract_adverbs(chunks: &mut Vec<Chunk>) -> Vec<Modifier> {
 }
 
 
+
+pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
+}
+
+#[derive(Debug)]
+pub enum ClauseRelation {
+    Reason,       // から、ので (ConjunctiveParticle)
+    Contrast,     // けど、が (ConjunctiveParticle)
+    Concessive,   // のに
+    Conditional,  // ば、たら
+    Continuation, // て
+    Main,         // sentence-final
+    Modifier,     // relative clause
+    Quotation,    // と after verb
+}
+
+impl ClauseRelation {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ClauseRelation::Reason => "Reason",
+            ClauseRelation::Contrast => "Contrast",
+            ClauseRelation::Concessive => "Concessive",
+            ClauseRelation::Conditional => "Conditional",
+            ClauseRelation::Continuation => "Continuation",
+            ClauseRelation::Main => "Main",
+            ClauseRelation::Modifier => "Modifier",
+            ClauseRelation::Quotation => "Quotation",
+        }
+    }
+
+    pub fn color(&self) -> &'static str {
+        match self {
+            ClauseRelation::Main => "#888",
+            ClauseRelation::Reason => "#5b7c99",
+            ClauseRelation::Contrast => "#9a6b4a",
+            ClauseRelation::Concessive => "#8b5a7a",
+            ClauseRelation::Conditional => "#6b7a4a",
+            ClauseRelation::Continuation => "#5a8a7a",
+            ClauseRelation::Modifier => "#7a6b99",
+            ClauseRelation::Quotation => "#6a6a8a",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ParticleRole {
+    Subject,          // が
+    Object,           // を
+    Topic,            // は
+    IndirectObject,   // に (default)
+    Destination,      // に、へ
+    LocationAction,   // で (default)
+    Means,            // で
+    Source,           // から
+    Limit,            // まで
+    Also,             // も
+    ComparisonBase,   // より
+    Accompaniment,    // と
+    Temporal,         // に
+    Purpose,          // に
+    Agent,            // に
+    Adverbial,        // に
+    Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
+}
+
+impl ParticleRole {
+    pub fn badge(&self) -> String {
+        match self {
+            ParticleRole::Subject => "Subject".into(),
+            ParticleRole::Object => "Object".into(),
+            ParticleRole::Topic => "Topic".into(),
+            ParticleRole::IndirectObject => "IndirectObject".into(),
+            ParticleRole::Destination => "Destination".into(),
+            ParticleRole::LocationAction => "LocationAction".into(),
+            ParticleRole::Means => "Means".into(),
+            ParticleRole::Source => "Source".into(),
+            ParticleRole::Limit => "Limit".into(),
+            ParticleRole::Also => "Also".into(),
+            ParticleRole::ComparisonBase => "ComparisonBase".into(),
+            ParticleRole::Accompaniment => "Accompaniment".into(),
+            ParticleRole::Temporal => "Temporal".into(),
+            ParticleRole::Purpose => "Purpose".into(),
+            ParticleRole::Agent => "Agent".into(),
+            ParticleRole::Adverbial => "Adverbial".into(),
+            ParticleRole::Ambiguous(_) => "Ambiguous".into(),
+        }
+    }
+
+    pub fn explanation(&self) -> &'static str {
+        match self {
+            ParticleRole::Subject => "marks the doer of the action",
+            ParticleRole::Object => "marks what the action is done to",
+            ParticleRole::Topic => "marks what the sentence is about",
+            ParticleRole::IndirectObject => "marks the receiver of the action",
+            ParticleRole::Destination => "marks the direction or endpoint of movement",
+            ParticleRole::LocationAction => "marks where the action takes place",
+            ParticleRole::Means => "marks the tool or method used",
+            ParticleRole::Source => "marks the starting point (from)",
+            ParticleRole::Limit => "marks the endpoint or extent (until)",
+            ParticleRole::Also => "adds 'also / too' to the marked word",
+            ParticleRole::ComparisonBase => "marks the standard of comparison (than)",
+            ParticleRole::Accompaniment => "marks 'together with'",
+            ParticleRole::Temporal => "marks a point in time",
+            ParticleRole::Purpose => "marks the purpose of movement",
+            ParticleRole::Agent => "marks the agent in passive or causative",
+            ParticleRole::Adverbial => "turns the phrase into an adverbial",
+            ParticleRole::Ambiguous(_) => "multiple roles possible",
+        }
+    }
+}
 
 pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
     let tokens: Vec<ProcToken> = tokens
