@@ -175,11 +175,30 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
 
         // conjugation detection
         let mut should_merge = false;
+        
+        let is_mergeable_auxiliary = |prev: &Token, aux: &Token| -> bool {
+            if aux.pos != PartOfSpeech::AuxiliaryVerb { return false; }
+            let base = aux.base.as_str();
+            
+            // 1. Purely Conjugational Auxiliaries (ALWAYS MERGE)
+            if matches!(base, "ない" | "ぬ" | "ん" | "ます" | "た" | "せる" | "させる" | "れる" | "られる" | "たい" | "う" | "よう") {
+                return true;
+            }
+            if base == "だ" && aux.ctype == CTypes::IrregularTa {
+                return true;
+            }
+            
+            // 2. Attributive Copula 'な' (NEVER MERGE)
+            // We used to conditionally merge this for AdjectiveVerbStems, but we now treat 'な' as a particle in sentence.rs!
+            
+            false
+        };
+
         if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
             should_merge = true;
         } else if i + 1 < line.len() {
             let next_token = &line[i + 1];
-            if next_token.pos == PartOfSpeech::AuxiliaryVerb
+            if is_mergeable_auxiliary(&token, next_token)
                || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle
                    && (next_token.surface == "じゃ" || next_token.surface == "では"))
             {
@@ -195,7 +214,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             }
 
             while j < line.len()
-                && (line[j].pos == PartOfSpeech::AuxiliaryVerb
+                && (is_mergeable_auxiliary(&line[j-1], &line[j])
                     || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
                     || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
                         && (line[j].surface == "て" || line[j].surface == "で"))

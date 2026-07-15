@@ -194,22 +194,21 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 i += 1;
             }
 
-            // な-adjective modifier (e.g. 好きな + 料理)
-            // Lindera tags the stem as Noun/AdjectiveVerbStem, and grammar.rs merges the 'な' auxiliary into it.
+            // な-adjective modifier (e.g. 静か + な + 公園)
             ProcToken { pos: PartOfSpeech::Noun, sub1: PartOfSpeechSubcategory1::AdjectiveVerbStem, .. } 
-                if current.full.ends_with("な") && next_pos == Some(PartOfSpeech::Noun) => {
+                if next_token.map_or(false, |t| t.base == "だ" && t.full == "な") && tokens.get(i + 2).map(|t| t.pos) == Some(PartOfSpeech::Noun) => {
                 // If it's the ending 'の', we shouldn't trigger the modifier rule.
-                let next = tokens.get(i + 1).unwrap();
-                let is_ending_no = next.full == "の" && match tokens.get(i + 2) {
-                    Some(n2) => n2.sub1 == PartOfSpeechSubcategory1::EndingParticle 
-                             || n2.sub2 == PartOfSpeechSubcategory2::Quotation
-                             || n2.full == "に",
+                let is_ending_no = tokens.get(i + 2).unwrap().full == "の" && match tokens.get(i + 3) {
+                    Some(n3) => n3.sub1 == PartOfSpeechSubcategory1::EndingParticle 
+                             || n3.sub2 == PartOfSpeechSubcategory2::Quotation
+                             || n3.full == "に",
                     None => true,
                 };
                 
                 if !is_ending_no {
                     assign_particle_roles(&mut chunks);
                     let mut adj_chunk = chunks.pop().unwrap();
+                    adj_chunk.particle = Some(next_token.unwrap().clone());
                     let adverbs = extract_adverbs(&mut chunks);
                     
                     let extracted = std::mem::take(&mut adj_chunk.modifiers);
@@ -221,7 +220,7 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                     pending_modifiers.extend(others);
                     pending_modifiers.push(Modifier::AdjectiveChunk(Box::new(adj_chunk)));
                 }
-                i += 1;
+                i += 2; // Skips both the AdjectiveVerbStem AND the absorbed 'な'
             }
 
             // のに concessive clause split
