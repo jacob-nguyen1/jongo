@@ -131,7 +131,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let mut volitional=false;
         let mut potential=false;
         let mut causative=false;
-        let mut conditional=false;
+        let mut conditional = token.cform == CForms::Conditional;
         let mut negimperative=false;
         // if token.cform != CForms::Imperfective && token.sub1 != PartOfSpeechSubcategory1::Suffix && token.ctype==CTypes::RuVerb{
         //     if line[i].base.as_str().ends_with("られる") || line[i].base.as_str().ends_with("せる") || line[i].base.as_str().ends_with("れる") || line[i].base.as_str().ends_with("ける") || line[i].base.as_str().ends_with("てる") || line[i].base.as_str().ends_with("へる") || line[i].base.as_str().ends_with("める") || line[i].base.as_str().ends_with("ねる") || line[i].base.as_str().ends_with("できる") || line[i].base.as_str().ends_with("べる") || line[i].base.as_str().ends_with("える"){potential = true};
@@ -139,46 +139,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         if token.base=="できる" {
             potential=true;
         }
-        // if(token.base=="な"){
-        //     if line[i-1].pos==PartOfSpeech::Verb{
-        //         negimperative=true;
-        //     }
-        // }
-        if token.cform == CForms::Continuative || token.cform == CForms::Imperfective || token.cform == CForms::AUConnection {
-            let mut j=i;
-            j+=1;
-            while j<line.len() && (line[j].sub1==PartOfSpeechSubcategory1::ConjuctiveParticle || line[j].cform==CForms::Continuative || line[j].cform==CForms::Imperfective){
-                teform |= line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle && (line[j].surface == "て" || line[j].surface == "で");
-                negative |= line[j].ctype == CTypes::IrregularNai;
-                desiderative |= line[j].ctype == CTypes::IrregularTai;
-                volitional |= line[j].ctype == CTypes::Invariable;
-                conditional |= line[j].cform == CForms::Conditional;
-                if line[j].base.as_str().ends_with("させる") || line[j].base.ends_with("せる") {
-                    causative=true;
-                }
-                else if line[j].base.as_str().ends_with("られる") || line[j].base.as_str().ends_with("せる") || line[j].base.as_str().ends_with("れる") || line[j].base.as_str().ends_with("ける") || line[j].base.as_str().ends_with("てる") || line[j].base.as_str().ends_with("へる") || line[j].base.as_str().ends_with("める") || line[j].base.as_str().ends_with("ねる") || line[j].base.as_str().ends_with("できる") || line[j].base.as_str().ends_with("べる") || line[j].base.as_str().ends_with("える") {potential = true};
-                if j + 1 < line.len() {
-                    if line[j+1].sub1 == PartOfSpeechSubcategory1::Unbound { break; } //detect new word after te
-                }
-                j+=1;
-            }
-            if j > 0 { // look at last token of the conjugation sequence
-                let last_conj_token = &line[j-1];
-                if teform && last_conj_token.sub1 != PartOfSpeechSubcategory1::ConjuctiveParticle {
-                    continuous = true;
-                    teform = false;
-                }
-                past |= last_conj_token.ctype == CTypes::IrregularTa;
-                negative |= last_conj_token.ctype == CTypes::IrregularNai;
-                desiderative |= last_conj_token.ctype == CTypes::IrregularTai;
-                volitional |= last_conj_token.ctype == CTypes::Invariable;
-                conditional |= last_conj_token.cform == CForms::Conditional;
-                if last_conj_token.base.as_str().ends_with("させる") || last_conj_token.base.ends_with("せる") {
-                    causative=true;
-                }
-                else if last_conj_token.base.as_str().ends_with("られる") || last_conj_token.base.as_str().ends_with("せる") || last_conj_token.base.as_str().ends_with("れる") || last_conj_token.base.as_str().ends_with("ける") || last_conj_token.base.as_str().ends_with("てる") || last_conj_token.base.as_str().ends_with("へる") || last_conj_token.base.as_str().ends_with("める") || last_conj_token.base.as_str().ends_with("ねる") || last_conj_token.base.as_str().ends_with("できる") || last_conj_token.base.as_str().ends_with("べる") || last_conj_token.base.as_str().ends_with("える") {potential = true};           
-            }
-        }
+
         // detect negimperative for verbs followed by "な" (e.g., 食べるな)
         if token.pos == PartOfSpeech::Verb && i + 1 < line.len() && line[i + 1].base == "な" {
             negimperative = true;
@@ -256,15 +217,16 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 
                 let desc = match next_token.base.as_str() {
                     "ます" => "Polite",
-                    "た" | "だ" => "Past",
-                    "ない" | "ん" | "ぬ" => "Negative",
-                    "たい" => "Desire",
-                    "られる" => "Potential / Passive",
-                    "れる" => "Passive",
-                    "せる" | "させる" => "Causative",
-                    "て" | "で" => "Te-Form",
-                    "いる" | "おる" => "Continuous",
-                    "ば" | "なら" | "たら" => "Conditional",
+                    "た" | "だ" => { past = true; "Past" },
+                    "ない" | "ん" | "ぬ" => { negative = true; "Negative" },
+                    "たい" => { desiderative = true; "Desire" },
+                    "られる" | "できる" => { potential = true; "Potential / Passive" },
+                    "れる" => { potential = true; "Passive" },
+                    "せる" | "させる" => { causative = true; "Causative" },
+                    "て" | "で" => { teform = true; "Te-Form" },
+                    "いる" | "おる" => { continuous = true; teform = false; "Continuous" },
+                    "ば" | "なら" | "たら" => { conditional = true; "Conditional" },
+                    "う" | "よう" => { volitional = true; "Auxiliary" },
                     _ => "Auxiliary",
                 };
 
