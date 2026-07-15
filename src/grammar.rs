@@ -3,9 +3,8 @@ use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
-use phf::phf_map;
 use std::sync::LazyLock;
-use crate::labels::{C_FORM_MAP, C_TYPE_MAP, CForms, CTypes::{self, RuVerb}, POS_MAP, POS_SUB1_MAP, POS_SUB2_MAP, POS_SUB3_MAP, PartOfSpeech::{self, Verb}, PartOfSpeechSubcategory1::{self, Unbound}, PartOfSpeechSubcategory2, PartOfSpeechSubcategory3};
+use crate::labels::{C_FORM_MAP, C_TYPE_MAP, CTypes, CForms, POS_MAP, POS_SUB1_MAP, POS_SUB2_MAP, POS_SUB3_MAP, PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2, PartOfSpeechSubcategory3};
 
 struct Token {
     surface: String,
@@ -129,7 +128,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         // if token.cform != CForms::Imperfective && token.sub1 != PartOfSpeechSubcategory1::Suffix && token.ctype==CTypes::RuVerb{
         //     if line[i].base.as_str().ends_with("られる") || line[i].base.as_str().ends_with("せる") || line[i].base.as_str().ends_with("れる") || line[i].base.as_str().ends_with("ける") || line[i].base.as_str().ends_with("てる") || line[i].base.as_str().ends_with("へる") || line[i].base.as_str().ends_with("める") || line[i].base.as_str().ends_with("ねる") || line[i].base.as_str().ends_with("できる") || line[i].base.as_str().ends_with("べる") || line[i].base.as_str().ends_with("える"){potential = true};
         // }
-        if(token.base=="できる"){
+        if token.base=="できる" {
             potential=true;
         }
         // if(token.base=="な"){
@@ -156,7 +155,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 j+=1;
             }
             if j<line.len(){ //look at last token to see if conjugation
-                if(teform && line[j].sub1!=PartOfSpeechSubcategory1::ConjuctiveParticle) {continuous=true};
+                if teform && line[j].sub1!=PartOfSpeechSubcategory1::ConjuctiveParticle {continuous=true};
                 past |= line[j].ctype == CTypes::IrregularTa;
                 negative |= line[j].ctype == CTypes::IrregularNai;
                 desiderative |= line[j].ctype == CTypes::IrregularTai;
@@ -326,7 +325,7 @@ impl Parser {
                     cform: cform,
                 }
             })
-            .collect();
+            .collect::<Vec<Token>>();
 
         Ok(parsed_tokens)
     }
