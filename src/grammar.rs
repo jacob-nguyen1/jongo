@@ -1,10 +1,13 @@
+use crate::labels::{
+    C_FORM_MAP, C_TYPE_MAP, CForms, CTypes, POS_MAP, POS_SUB1_MAP, POS_SUB2_MAP, POS_SUB3_MAP,
+    PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2, PartOfSpeechSubcategory3,
+};
 use lindera::LinderaResult;
 use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
 use lindera::tokenizer::Tokenizer;
 use std::sync::LazyLock;
-use crate::labels::{C_FORM_MAP, C_TYPE_MAP, CTypes, CForms, POS_MAP, POS_SUB1_MAP, POS_SUB2_MAP, POS_SUB3_MAP, PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2, PartOfSpeechSubcategory3};
 
 struct Token {
     surface: String,
@@ -49,53 +52,34 @@ pub struct ProcToken {
     pub staircase: Option<Vec<StaircaseStep>>,
 }
 
-impl ProcToken{
-    fn verbPrint(&self) -> String {
-        match &self.conjugation {
-            Some(conj) => {
-                let mut parts = Vec::new();
-                if conj.negative {
-                    parts.push("negative");
-                }
-                if conj.past {
-                    parts.push("past");
-                }
-                if conj.continuous {
-                    parts.push("continuous");
-                }
-                if conj.teform {
-                    parts.push("teform");
-                }
-                if conj.desiderative {
-                    parts.push("desiderative");
-                }
-                if conj.volitional {
-                    parts.push("volitional");
-                }
-                if conj.potential {
-                    parts.push("potential");
-                }
-                if conj.causative {
-                    parts.push("causative");
-                }
-                if conj.conditional {
-                    parts.push("conditional");
-                }
-                if conj.negimperative {
-                    parts.push("negimperative");
-                }
-                if parts.is_empty() {
-                    "none".to_string()
-                } else {
-                    parts.join(", ")
-                }
+impl ProcToken {
+    fn verb_print(&self) -> String {
+        if let Some(conj) = &self.conjugation {
+            let parts: Vec<&str> = [
+                (conj.negative, "negative"),
+                (conj.past, "past"),
+                (conj.continuous, "continuous"),
+                (conj.teform, "teform"),
+                (conj.desiderative, "desiderative"),
+                (conj.volitional, "volitional"),
+                (conj.potential, "potential"),
+                (conj.causative, "causative"),
+                (conj.conditional, "conditional"),
+                (conj.negimperative, "negimperative"),
+            ]
+            .iter()
+            .filter_map(|&(flag, name)| if flag { Some(name) } else { None })
+            .collect();
+
+            match parts.len() {
+                0 => "none".to_string(),
+                _ => parts.join(", "),
             }
-            None => "none".to_string(),
+        } else {
+            "none".to_string()
         }
     }
 }
-
-
 
 fn filter(line: &[Token]) -> Vec<ProcToken> {
     let mut filtered_tokens: Vec<ProcToken> = Vec::new();
@@ -104,11 +88,15 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let token = line.get(i).unwrap();
         let pos = token.pos.clone();
         let base = token.base.clone();
-        let sub1=token.sub1.clone();
+        let sub1 = token.sub1.clone();
         let sub2 = token.sub2;
         let mut conj = token.surface.clone();
 
-        if token.surface == "か" && i + 2 < line.len() && line[i+1].surface == "どう" && line[i+2].surface == "か" {
+        if token.surface == "か"
+            && i + 2 < line.len()
+            && line[i + 1].surface == "どう"
+            && line[i + 2].surface == "か"
+        {
             filtered_tokens.push(ProcToken {
                 full: "かどうか".to_string(),
                 base: "かどうか".to_string(),
@@ -123,64 +111,119 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         }
 
         //conjugation detection
-        let mut negative=false;
-        let mut past=false;
-        let mut continuous=false;
-        let mut teform=false;
-        let mut desiderative=false;
-        let mut volitional=false;
-        let mut potential=false;
-        let mut causative=false;
-        let mut conditional = token.cform == CForms::Conditional;
-        let mut negimperative=false;
+
+        let mut state: ConjugationFeatures = ConjugationFeatures {
+            negative: false,
+            past: false,
+            continuous: false,
+            teform: false,
+            desiderative: false,
+            volitional: false,
+            potential: false,
+            causative: false,
+            conditional: false,
+            negimperative: false,
+        };
+
+        // let mut negative=false;
+        // let mut past=false;
+        // let mut continuous=false;
+        // let mut teform=false;
+        // let mut desiderative=false;
+        // let mut volitional=false;
+        // let mut potential=false;
+        // let mut causative=false;
+        // //let mut conditional = token.cform == CForms::Conditional;
+        // let mut conditional=false;
+        // let mut negimperative=false;
         // if token.cform != CForms::Imperfective && token.sub1 != PartOfSpeechSubcategory1::Suffix && token.ctype==CTypes::RuVerb{
         //     if line[i].base.as_str().ends_with("られる") || line[i].base.as_str().ends_with("せる") || line[i].base.as_str().ends_with("れる") || line[i].base.as_str().ends_with("ける") || line[i].base.as_str().ends_with("てる") || line[i].base.as_str().ends_with("へる") || line[i].base.as_str().ends_with("める") || line[i].base.as_str().ends_with("ねる") || line[i].base.as_str().ends_with("できる") || line[i].base.as_str().ends_with("べる") || line[i].base.as_str().ends_with("える"){potential = true};
         // }
-        if token.base=="できる" {
-            potential=true;
+        if token.base == "できる" {
+            state.potential = true;
+        }
+
+        // Detect potential form for non-Ru verbs like 貸せる, 飛べる, 洗える.
+        // Lindera parses these as standard `RuVerb`. We check if they end in standard potential
+        // ichidan suffix patterns, AND are NOT native JMDict verbs (like 食べる, 見せる).
+        if token.pos == PartOfSpeech::Verb && token.ctype == CTypes::RuVerb {
+            let base = token.base.as_str();
+            if base.ends_with("ける") || base.ends_with("げる") || base.ends_with("せる") || 
+               base.ends_with("てる") || base.ends_with("ねる") || base.ends_with("べる") || 
+               base.ends_with("める") || base.ends_with("れる") || base.ends_with("える") {
+                if !crate::jmdict::is_native_verb(base) {
+                    state.potential = true;
+                }
+            }
         }
 
         // detect negimperative for verbs followed by "な" (e.g., 食べるな)
         if token.pos == PartOfSpeech::Verb && i + 1 < line.len() && line[i + 1].base == "な" {
-            negimperative = true;
+            state.negimperative = true;
             conj += "な";
         }
 
         // conjugation detection
         let mut should_merge = false;
-        
+
         let is_mergeable_auxiliary = |prev: &Token, aux: &Token| -> bool {
-            if aux.pos != PartOfSpeech::AuxiliaryVerb { return false; }
+            if aux.pos != PartOfSpeech::AuxiliaryVerb {
+                return false;
+            }
             let base = aux.base.as_str();
-            
+
             // 1. Purely Conjugational Auxiliaries (ALWAYS MERGE)
-            if matches!(base, "ない" | "ぬ" | "ん" | "ます" | "た" | "せる" | "させる" | "れる" | "られる" | "たい" | "う" | "よう") {
+            if matches!(
+                base,
+                "ない"
+                    | "ぬ"
+                    | "ん"
+                    | "ます"
+                    | "た"
+                    | "せる"
+                    | "させる"
+                    | "れる"
+                    | "られる"
+                    | "たい"
+                    | "う"
+                    | "よう"
+            ) {
                 return true;
             }
-            if base == "だ" && aux.ctype == CTypes::IrregularTa {
+            if base == "だ"
+                && (aux.ctype == CTypes::IrregularTa || aux.ctype == CTypes::IrregularDa)
+            {
                 return true;
             }
-            
+
             // 2. Attributive Copula 'な' (NEVER MERGE)
             // We used to conditionally merge this for AdjectiveVerbStems, but we now treat 'な' as a particle in sentence.rs!
-            
+
             false
         };
 
-        if token.surface != token.base && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb) {
+        if token.surface != token.base
+            && (token.surface != "な" && token.pos != PartOfSpeech::AuxiliaryVerb && token.pos != PartOfSpeech::Noun)
+        {
             should_merge = true;
         } else if i + 1 < line.len() {
             let next_token = &line[i + 1];
             if is_mergeable_auxiliary(&token, next_token)
-               || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle
-                   && (next_token.surface == "じゃ" || next_token.surface == "では"))
+                || (next_token.sub1 == PartOfSpeechSubcategory1::AdverbialParticle
+                    && (next_token.surface == "じゃ" || next_token.surface == "では"))
+                || (next_token.sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
+                    && next_token.surface == "ば")
             {
                 should_merge = true;
             }
         }
-        
+
         // G5: Handle 'である' merging explicitly
-        let base = if token.surface == "で" && token.base == "だ" && i + 1 < line.len() && line[i+1].base == "ある" {
+        let base = if token.surface == "で"
+            && token.base == "だ"
+            && i + 1 < line.len()
+            && line[i + 1].base == "ある"
+        {
             should_merge = true;
             "である".to_string() // Override base so JMdict hits 'である'
         } else {
@@ -198,35 +241,83 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
 
             let mut j = i + 1;
             // If negimperative is true, j should skip the "な"
-            if negimperative {
+            if state.negimperative {
                 j += 1;
             }
 
             while j < line.len()
-                && (is_mergeable_auxiliary(&line[j-1], &line[j])
+                && (is_mergeable_auxiliary(&line[j - 1], &line[j])
                     || line[j].sub1 == PartOfSpeechSubcategory1::Suffix
                     || (line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle
-                        && (line[j].surface == "て" || line[j].surface == "で"))
+                        && (line[j].surface == "て" || line[j].surface == "で" || line[j].surface == "ば"))
                     || (line[j].sub1 == PartOfSpeechSubcategory1::AdverbialParticle
                         && (line[j].surface == "じゃ" || line[j].surface == "では"))
-                    || ((line[j].sub1 == PartOfSpeechSubcategory1::Bound || line[j].sub1 == PartOfSpeechSubcategory1::DependentVerb)
-                        && (line[j].base == "いる" || line[j].base == "い" || line[j].base == "おる" || line[j].base == "おり"))
-                    || (line[j-1].surface == "で" && line[j-1].base == "だ" && line[j].base == "ある"))
+                    || ((line[j].sub1 == PartOfSpeechSubcategory1::Bound
+                        || line[j].sub1 == PartOfSpeechSubcategory1::DependentVerb)
+                        && (line[j].base == "いる"
+                            || line[j].base == "い"
+                            || line[j].base == "おる"
+                            || line[j].base == "おり"))
+                    || (line[j - 1].surface == "で"
+                        && line[j - 1].base == "だ"
+                        && line[j].base == "ある")
+                    || (line[j - 1].sub1 == PartOfSpeechSubcategory1::Number
+                        && line[j].surface == "月"))
             {
                 let next_token = &line[j];
-                
+
                 let desc = match next_token.base.as_str() {
                     "ます" => "Polite",
-                    "た" | "だ" => { past = true; "Past" },
-                    "ない" | "ん" | "ぬ" => { negative = true; "Negative" },
-                    "たい" => { desiderative = true; "Desire" },
-                    "られる" | "できる" => { potential = true; "Potential / Passive" },
-                    "れる" => { potential = true; "Passive" },
-                    "せる" | "させる" => { causative = true; "Causative" },
-                    "て" | "で" => { teform = true; "Te-Form" },
-                    "いる" | "おる" => { continuous = true; teform = false; "Continuous" },
-                    "ば" | "なら" | "たら" => { conditional = true; "Conditional" },
-                    "う" | "よう" => { volitional = true; "Auxiliary" },
+                    "た" | "だ" if next_token.surface == "たら" => {
+                        state.past = true;
+                        state.conditional = true;
+                        "Conditional"
+                    }
+                    "た" | "だ" if next_token.surface == "なら" => {
+                        state.conditional = true;
+                        "Conditional"
+                    }
+                    "た" | "だ" => {
+                        state.past = true;
+                        "Past"
+                    }
+                    "ない" | "ん" | "ぬ" => {
+                        state.negative = true;
+                        "Negative"
+                    }
+                    "たい" => {
+                        state.desiderative = true;
+                        "Desire"
+                    }
+                    "られる" | "できる" => {
+                        state.potential = true;
+                        "Potential / Passive"
+                    }
+                    "れる" => {
+                        state.potential = true;
+                        "Passive"
+                    }
+                    "せる" | "させる" => {
+                        state.causative = true;
+                        "Causative"
+                    }
+                    "て" | "で" => {
+                        state.teform = true;
+                        "Te-Form"
+                    }
+                    "いる" | "おる" => {
+                        state.continuous = true;
+                        state.teform = false;
+                        "Continuous"
+                    }
+                    "ば" | "なら" => {
+                        state.conditional = true;
+                        "Conditional"
+                    }
+                    "う" | "よう" => {
+                        state.volitional = true;
+                        "Volitional"
+                    }
                     _ => "Auxiliary",
                 };
 
@@ -234,7 +325,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                     text: format!("{}{}", cumulative_surface, next_token.base),
                     description: desc.to_string(),
                 });
-                
+
                 cumulative_surface.push_str(&next_token.surface);
                 conj = conj + &next_token.surface;
                 j += 1;
@@ -243,14 +334,19 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 staircase = Some(steps);
             }
             i = j - 1;
-        } else if negimperative {
+        } else if state.negimperative {
             i += 1;
         } else if pos == PartOfSpeech::Noun {
             let mut j = i + 1;
             while j < line.len() {
                 let nxt = &line[j];
-                if (sub1 == PartOfSpeechSubcategory1::Number && nxt.pos == PartOfSpeech::Noun && nxt.sub1 == PartOfSpeechSubcategory1::Number)
-                   || nxt.sub1 == PartOfSpeechSubcategory1::Suffix
+                if (sub1 == PartOfSpeechSubcategory1::Number
+                    && ((nxt.pos == PartOfSpeech::Noun
+                        && (nxt.sub1 == PartOfSpeechSubcategory1::Number
+                            || nxt.surface == "月"
+                            || nxt.surface == "目"))
+                        || (nxt.pos == PartOfSpeech::AuxiliaryVerb && nxt.surface == "つ")))
+                    || nxt.sub1 == PartOfSpeechSubcategory1::Suffix
                 {
                     conj = conj + &nxt.surface;
                     j += 1;
@@ -266,18 +362,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             pos: pos,
             sub1,
             sub2,
-            conjugation: Some(ConjugationFeatures {
-                negative,
-                past,
-                continuous,
-                teform,
-                desiderative,
-                volitional,
-                potential,
-                causative,
-                conditional,
-                negimperative,
-            }),
+            conjugation: Some(state),
             staircase,
         });
         i += 1;
@@ -308,46 +393,32 @@ impl Parser {
                 let details = token.details();
                 let detail: Vec<String> = details.iter().map(|s| (*s).to_string()).collect();
 
-                let pos = details
-                    .get(0)
-                    .and_then(|k| POS_MAP.get(*k))
-                    .copied()
-                    .unwrap_or(PartOfSpeech::ERR);
+                macro_rules! map_detail {
+                    ($idx:expr, $map:expr, $err:expr) => {
+                        details
+                            .get($idx)
+                            .and_then(|k| $map.get(*k))
+                            .copied()
+                            .unwrap_or($err)
+                    };
+                }
 
-                let sub1 = details
-                    .get(1)
-                    .and_then(|k| POS_SUB1_MAP.get(*k))
-                    .copied()
-                    .unwrap_or(PartOfSpeechSubcategory1::ERR);
+                macro_rules! detail_or_surface {
+                    ($idx:expr, $surface:expr) => {
+                        details
+                            .get($idx)
+                            .map(|s| (*s).to_string())
+                            .unwrap_or($surface.clone())
+                    };
+                }
 
-                let sub2 = details
-                    .get(2)
-                    .and_then(|k| POS_SUB2_MAP.get(*k))
-                    .copied()
-                    .unwrap_or(PartOfSpeechSubcategory2::ERR);
-
-                let sub3 = details
-                    .get(3)
-                    .and_then(|k| POS_SUB3_MAP.get(*k))
-                    .copied()
-                    .unwrap_or(PartOfSpeechSubcategory3::ERR);
-
-                let ctype = details
-                    .get(4)
-                    .and_then(|k| C_TYPE_MAP.get(*k))
-                    .copied()
-                    .unwrap_or(CTypes::ERR);
-
-                let cform = details
-                    .get(5)
-                    .and_then(|k| C_FORM_MAP.get(*k))
-                    .copied()
-                    .unwrap_or(CForms::ERR);
-
-                let base = details
-                    .get(6)
-                    .map(|s| (*s).to_string())
-                    .unwrap_or(surface.clone());
+                let pos = map_detail!(0, POS_MAP, PartOfSpeech::ERR);
+                let sub1 = map_detail!(1, POS_SUB1_MAP, PartOfSpeechSubcategory1::ERR);
+                let sub2 = map_detail!(2, POS_SUB2_MAP, PartOfSpeechSubcategory2::ERR);
+                let sub3 = map_detail!(3, POS_SUB3_MAP, PartOfSpeechSubcategory3::ERR);
+                let ctype = map_detail!(4, C_TYPE_MAP, CTypes::ERR);
+                let cform = map_detail!(5, C_FORM_MAP, CForms::ERR);
+                let base = detail_or_surface!(6, surface);
 
                 Token {
                     surface: surface,
@@ -381,7 +452,9 @@ pub fn grammar() {
     let mut choice: String;
     match inp.trim() {
         //"1" => choice = "私は毎朝早く起きて、新鮮なコーヒーを飲みながら、窓から見える庭の美しい景色を眺めるのが好きです。".into(),
-        "1" => choice = "食べる 食べた 食べている 食べていた 食べたい 食べたくない 食べよう 食べられる 食べさせる 食べるな 食べて 食べながら 食べない 食べなかった 食べていない 食べていなかった 食べたくなかった 食べようとしない 食べられない 食べさせない 食べたら".into(),
+        "1" => choice = "食べる 食べた 食べている 食べていた 食べたい 食べたくない 食べよう 食べられる 食べさせる 食べるな 食べて 食べながら 食べない 食べなかった 食べていない 食べていなかった 食べたくなかった 食べようとしない 食べられない 食べさせない 食べたら 食べるば 食べるなら".into(),
+        //"1" => choice = "7月15日に友人と映画館へ行きました。".into(),
+        //"1" => choice = "指させる 指せる 貸させる 貸せる 押させる 押せる 出させる 出せる 返させる 返せる 探させる 探せる 洗わせる 洗える 助けさせる 助けられる 鍛えさせる 鍛えられる 増させる 増せる 変えさせる 変えられる 考えさせる 考えられる 走らせる 走れる 飛ばさせる 飛べる 乗らせる 乗れる 売らせる 売れる 切らせる 切れる 来させる 来られる できさせる できる".into(),
         "2" => {
             println!("Input your text:");
             let mut input = String::new();
@@ -418,7 +491,10 @@ pub fn grammar() {
                 filtered.iter().for_each(|f| {
                     println!(
                         "Word: {}, Base: {}, POS: {:?}, Conjugation: {}",
-                        f.full, f.base, f.pos, f.verbPrint()
+                        f.full,
+                        f.base,
+                        f.pos,
+                        f.verb_print()
                     );
                 });
             }
@@ -444,18 +520,16 @@ mod tests {
     #[test]
     fn lindera_raw() {
         let sentences = vec![
-            "14つ", "十四つ",
-            "12月", "十二月",
-            "14ヶ月", "14か月",
+            "たべたら", "指させる", "指せる"
         ];
-
+        
         for sentence in sentences {
             println!("\n=== {} ===", sentence);
             let tokens = PARSER.parse(sentence).unwrap();
             for t in &tokens {
                 println!(
-                    "  {}, {:?}, {:?}, {:?}, {:?}, {:?}",
-                    t.surface, t.pos, t.sub1, t.sub2, t.sub3, t.base
+                    "  {}, ctype={:?}, cform={:?}, detail={:?}",
+                    t.surface, t.ctype, t.cform, t.detail
                 );
             }
         }
@@ -466,7 +540,10 @@ mod tests {
     #[test]
     fn filtered() {
         let sentences = vec![
-            "もっと早く起きればよかったのにな",
+            "たべたら", "指させる", "指せる", "貸させる", "貸せる", "押させる", "押せる", "出させる", "出せる",
+            "返させる", "返せる", "探させる", "探せる", "洗わせる", "洗える", "助けさせる", "助けられる",
+            "鍛えさせる", "鍛えられる", "増させる", "増せる", "変えさせる", "変えられる", "考えさせる", "考えられる",
+            "走らせる", "走れる", "飛ばさせる", "飛べる", "乗らせる", "乗れる", "売らせる", "売れる", "切らせる", "切れる", "来させる", "来られる", "できさせる", "できる"
         ];
 
         for sentence in sentences {
@@ -474,10 +551,17 @@ mod tests {
             let tokens = analyze_sentence(sentence);
             for t in &tokens {
                 println!(
-                    "  {}, base={}, pos={:?}, sub1={:?}, sub2={:?}",
-                    t.full, t.base, t.pos, t.sub1, t.sub2
+                    "  {}, base={}, pos={:?}, sub1={:?}, sub2={:?}, conj={}",
+                    t.full, t.base, t.pos, t.sub1, t.sub2, t.verb_print()
                 );
             }
         }
+
+        // Verify 食べたら is detected as conditional
+        let tokens = analyze_sentence("食べたら");
+        assert_eq!(tokens.len(), 1);
+        let conj = tokens[0].conjugation.as_ref().unwrap();
+        assert!(conj.conditional, "食べたら should be conditional");
+        assert!(conj.past, "食べたら should be past");
     }
 }

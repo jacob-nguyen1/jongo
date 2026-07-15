@@ -1,6 +1,32 @@
 use jmdict::{entries, GlossLanguage, Enum};
 
 
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
+pub static NATIVE_VERBS: LazyLock<HashSet<String>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    for entry in jmdict::entries() {
+        let is_verb = entry.senses().any(|sense| {
+            let jm_pos: Vec<_> = sense.parts_of_speech().collect();
+            jm_pos.iter().any(|p| crate::labels::PartOfSpeech::Verb.matches_jmdict(p))
+        });
+        if is_verb {
+            for k in entry.kanji_elements() {
+                set.insert(k.text.to_string());
+            }
+            for r in entry.reading_elements() {
+                set.insert(r.text.to_string());
+            }
+        }
+    }
+    set
+});
+
+pub fn is_native_verb(word: &str) -> bool {
+    NATIVE_VERBS.contains(word)
+}
+
 pub fn lookup(word: &str, pos: crate::labels::PartOfSpeech) -> Option<(String, Vec<String>)> {
     for entry in jmdict::entries() {
         // if the word matches kanji or reading
@@ -69,7 +95,11 @@ mod tests {
 
     #[test]
     fn debug() {
-        debug_word("は");
-        debug_word("に");
+        debug_word("食べる");
+        debug_word("見せる");
+        debug_word("教える");
+        debug_word("乗れる");
+        debug_word("洗える");
+        debug_word("飛べる");
     }
 }
