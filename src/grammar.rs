@@ -281,7 +281,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 negimperative,
             }),
             staircase,
-            definitions: crate::jmdict::lookup(&base, pos.clone()).map(|x| x.1).unwrap_or_default(),
+            definitions: crate::jmdict::lookup(&base, pos.clone(), sub1 == PartOfSpeechSubcategory1::ProperNoun).into_iter().flat_map(|x| x.glosses).collect(),
         });
         i += 1;
     }

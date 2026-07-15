@@ -523,7 +523,7 @@ fn assign_particle_roles(chunks: &mut Vec<Chunk>) {
     let mut iter = old_chunks.into_iter().peekable();
     
     while let Some(mut chunk) = iter.next() {
-        if chunk.word.pos == PartOfSpeech::Noun || chunk.word.pos == PartOfSpeech::Adverb {
+        if chunk.word.pos == PartOfSpeech::Noun || chunk.word.pos == PartOfSpeech::Adverb || chunk.word.pos == PartOfSpeech::Verb || chunk.word.pos == PartOfSpeech::Adjective {
             if let Some(next_chunk) = iter.peek() {
                 let next_word = &next_chunk.word;
 
@@ -703,7 +703,7 @@ mod tests {
         // 2nd case: 昨日 stays in the main clause.
         // Fix 5: によると evidential expression
         // Fix 6: Bracketed quotation
-        let text = "昨日買った本を読む。昨日、買った本を読む。子供の時、よく遊んだ。天気予報によると明日は雨だ。彼は「行きたくない」と言った。";
+        let text = "先日、薬草を探しに森に出かけてみれば出会ったのは、村人その壱、弐、参という名の人さらいだった。";
         
         for sentence in text.split_inclusive('。') {
             let sentence = sentence.trim();

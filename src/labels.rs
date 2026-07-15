@@ -326,6 +326,41 @@ pub enum ClauseRelation {
     Ambiguous(Vec<ClauseRelation>), // When rule-based parsing cannot distinguish (e.g., conditional vs quotation と)
 }
 
+impl ClauseRelation {
+    pub fn color(&self) -> &'static str {
+        match self {
+            Self::Reason => "#a040a0",
+            Self::Contrast | Self::Concessive => "#e07000",
+            Self::Conditional => "#40a040",
+            Self::Continuation | Self::Sequence | Self::Simultaneous => "#008080",
+            Self::Main => "#000000",
+            Self::Modifier => "#666666",
+            Self::Quotation | Self::Evidential => "#7070a0",
+            Self::Temporal | Self::Until => "#88aa44",
+            Self::Ambiguous(_) => "#888888",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Reason => "Reason",
+            Self::Contrast => "Contrast",
+            Self::Concessive => "Concessive",
+            Self::Conditional => "Conditional",
+            Self::Continuation => "Continuation",
+            Self::Sequence => "Sequence",
+            Self::Simultaneous => "Simultaneous",
+            Self::Temporal => "Temporal",
+            Self::Until => "Until",
+            Self::Main => "Main",
+            Self::Modifier => "Modifier",
+            Self::Quotation => "Quotation",
+            Self::Evidential => "Evidential",
+            Self::Ambiguous(_) => "Ambiguous",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParticleRole {
     Subject,          // が
@@ -348,4 +383,56 @@ pub enum ParticleRole {
     Scope,            // で
     Approximate,      // ぐらい
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
+}
+
+impl ParticleRole {
+    pub fn badge(&self) -> &'static str {
+        match self {
+            Self::Subject => "Subject",
+            Self::Object => "Object",
+            Self::Topic => "Topic",
+            Self::IndirectObject => "Indirect Object",
+            Self::Destination => "Destination",
+            Self::LocationAction => "Action Location",
+            Self::Means => "Means/Method",
+            Self::Source => "Source",
+            Self::Limit => "Limit",
+            Self::Also => "Also",
+            Self::ComparisonBase => "Comparison Base",
+            Self::Accompaniment => "Accompaniment",
+            Self::Listing => "Listing",
+            Self::Temporal => "Time",
+            Self::Purpose => "Purpose",
+            Self::Agent => "Agent (Passive/Causative)",
+            Self::Adverbial => "Adverbial",
+            Self::Scope => "Scope",
+            Self::Approximate => "Approximate",
+            Self::Ambiguous(_) => "Ambiguous",
+        }
+    }
+
+    pub fn explanation(&self) -> &'static str {
+        match self {
+            Self::Subject => "Performs the action or is described.",
+            Self::Object => "Direct receiver of the action.",
+            Self::Topic => "The main topic of the sentence.",
+            Self::IndirectObject => "Receiver of the action.",
+            Self::Destination => "Where the action is heading.",
+            Self::LocationAction => "Where the action takes place.",
+            Self::Means => "How the action is done.",
+            Self::Source => "Where the action started.",
+            Self::Limit => "The limit of the action in time or space.",
+            Self::Also => "Includes this item as well.",
+            Self::ComparisonBase => "The baseline for a comparison.",
+            Self::Accompaniment => "Who the action is done with.",
+            Self::Listing => "An incomplete list of items.",
+            Self::Temporal => "When the action happens.",
+            Self::Purpose => "Why the action is happening.",
+            Self::Agent => "Who performs the action in passive/causative.",
+            Self::Adverbial => "Turns the word into an adverb.",
+            Self::Scope => "The scope or boundary of the action.",
+            Self::Approximate => "An approximate amount or point.",
+            Self::Ambiguous(_) => "Cannot be determined by rule-based parsing alone.",
+        }
+    }
 }

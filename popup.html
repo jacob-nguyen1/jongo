@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Jongo</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        width: 280px;
+        padding: 16px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        color: #1a1a1a;
+        background: #fff;
+      }
+
+      .header {
+        margin-bottom: 16px;
+      }
+
+      .name {
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        background: #f5f5f5;
+        border-radius: 8px;
+      }
+
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+        flex-shrink: 0;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider {
+        position: absolute;
+        inset: 0;
+        background: #ccc;
+        border-radius: 24px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .slider::before {
+        content: "";
+        position: absolute;
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform 0.2s;
+      }
+
+      input:checked + .slider {
+        background: #4a9;
+      }
+
+      input:checked + .slider::before {
+        transform: translateX(20px);
+      }
+
+      .status {
+        font-weight: 500;
+      }
+
+      .status.on {
+        color: #2a7;
+      }
+
+      .status.off {
+        color: #888;
+      }
+
+      .hint {
+        margin-top: 12px;
+        color: #666;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <span class="name">Jongo</span>
+    </div>
+
+    <div class="toggle-row">
+      <label class="switch" title="Toggle Jongo">
+        <input type="checkbox" id="toggle" />
+        <span class="slider"></span>
+      </label>
+      <span id="status" class="status on">Enabled</span>
+    </div>
+
+    <p class="hint">Hold <strong>Shift</strong> and hover over Japanese text to analyze a sentence.</p>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

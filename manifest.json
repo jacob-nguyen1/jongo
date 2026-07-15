@@ -3,6 +3,14 @@
   "name": "Jongo",
   "version": "1.0.0",
   "description": "Jongo",
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "Jongo (on)",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
