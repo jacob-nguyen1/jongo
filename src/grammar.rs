@@ -102,6 +102,19 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         let sub2 = token.sub2;
         let mut conj = token.surface.clone();
 
+        if token.surface == "か" && i + 2 < line.len() && line[i+1].surface == "どう" && line[i+2].surface == "か" {
+            filtered_tokens.push(ProcToken {
+                full: "かどうか".to_string(),
+                base: "かどうか".to_string(),
+                pos: PartOfSpeech::Noun,
+                sub1: PartOfSpeechSubcategory1::Bound,
+                sub2: PartOfSpeechSubcategory2::X,
+                conjugation: None,
+            });
+            i += 3;
+            continue;
+        }
+
         //conjugation detection
         let mut negative=false;
         let mut past=false;
@@ -128,7 +141,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             let mut j=i;
             j+=1;
             while j<line.len() && (line[j].sub1==PartOfSpeechSubcategory1::ConjuctiveParticle || line[j].cform==CForms::Continuative || line[j].cform==CForms::Imperfective){
-                teform|= line[j].sub1==PartOfSpeechSubcategory1::ConjuctiveParticle;
+                teform |= line[j].sub1 == PartOfSpeechSubcategory1::ConjuctiveParticle && (line[j].surface == "て" || line[j].surface == "で");
                 negative |= line[j].ctype == CTypes::IrregularNai;
                 desiderative |= line[j].ctype == CTypes::IrregularTai;
                 volitional |= line[j].ctype == CTypes::Invariable;
