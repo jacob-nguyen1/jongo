@@ -326,7 +326,7 @@ pub enum ClauseRelation {
     Ambiguous(Vec<ClauseRelation>), // When rule-based parsing cannot distinguish (e.g., conditional vs quotation と)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ParticleRole {
     Subject,          // が
     Object,           // を

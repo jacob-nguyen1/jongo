@@ -41,9 +41,15 @@ impl Chunk {
         let mut s = String::new();
         for modifier in &self.modifiers {
             match modifier {
-                Modifier::Adjective(adj) => s.push_str(&adj.full),
+                Modifier::AdjectiveChunk(adj) => s.push_str(&adj.text()),
                 Modifier::Limitation(lim) => s.push_str(&lim.text()),
                 Modifier::Clause(clause) => s.push_str(&clause.text()),
+                Modifier::AdverbChunk(adv) => s.push_str(&adv.text()),
+                Modifier::Quotation(clause) => {
+                    s.push_str("「");
+                    s.push_str(&clause.text());
+                    s.push_str("」と");
+                }
             }
         }
         
@@ -62,9 +68,11 @@ impl Chunk {
 
 #[derive(Debug)]
 pub enum Modifier {
-    Adjective(ProcToken),
+    AdjectiveChunk(Box<Chunk>),
     Limitation(Box<Chunk>),
     Clause(Box<Clause>),
+    AdverbChunk(Box<Chunk>),
+    Quotation(Box<Clause>),
 }
 
 
@@ -74,12 +82,14 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         .into_iter()
         .filter(|t| t.pos != PartOfSpeech::Symbol || 
                     t.sub1 == PartOfSpeechSubcategory1::Comma ||
-                    t.sub1 == PartOfSpeechSubcategory1::OpenParenthesis)
+                    t.sub1 == PartOfSpeechSubcategory1::OpenParenthesis ||
+                    t.sub1 == PartOfSpeechSubcategory1::ClosedParenthesis)
         .collect();
 
     let mut clauses: Vec<Clause> = Vec::new();
     let mut chunks: Vec<Chunk> = Vec::new();
     let mut pending_modifiers: Vec<Modifier> = Vec::new();
+    let mut pending_predicate_modifiers: Vec<Modifier> = Vec::new();
     let mut pending_ending_particles: Vec<ProcToken> = Vec::new();
     let mut comma_barrier: Option<usize> = None; // chunks.len() at time of last comma
     
@@ -94,13 +104,38 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
             continue;
         }
 
-        // Bracketed Quotation start: force clause split before the quote starts
+        // Bracketed Quotation start: capture until CloseParenthesis
         if current.pos == PartOfSpeech::Symbol && current.sub1 == PartOfSpeechSubcategory1::OpenParenthesis {
-            if !chunks.is_empty() {
-                clauses.push(Clause { chunks: std::mem::take(&mut chunks), relation: ClauseRelation::Main, connective: None, ending_particles: std::mem::take(&mut pending_ending_particles) });
+            let mut inner_tokens = Vec::new();
+            let mut j = i + 1;
+            let mut found_close = false;
+            while j < tokens.len() {
+                if tokens[j].pos == PartOfSpeech::Symbol && tokens[j].sub1 == PartOfSpeechSubcategory1::ClosedParenthesis {
+                    found_close = true;
+                    break;
+                }
+                inner_tokens.push(tokens[j].clone());
+                j += 1;
             }
-            i += 1;
-            continue;
+            if found_close {
+                if let Some(inner_sentence) = build_sentence(inner_tokens) {
+                    // Wrap the inner sentence in a Quotation modifier
+                    let quote_clause = Clause {
+                        chunks: inner_sentence.clauses.into_iter().flat_map(|c| c.chunks).collect(),
+                        relation: ClauseRelation::Quotation,
+                        connective: None,
+                        ending_particles: Vec::new(),
+                    };
+                    pending_predicate_modifiers.push(Modifier::Quotation(Box::new(quote_clause)));
+                }
+                i = j + 1; // Skip past the closing parenthesis
+                
+                // If there's a following `と`, skip it too because it's the quotation particle
+                if i < tokens.len() && tokens[i].full == "と" && tokens[i].sub2 == PartOfSpeechSubcategory2::Quotation {
+                    i += 1;
+                }
+                continue;
+            }
         }
         
         chunks.push(Chunk {
@@ -111,6 +146,61 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
             modifiers: std::mem::take(&mut pending_modifiers),
             is_head: true,
         });
+
+        // UNIFIED PREDICATE MODIFIER DRAIN
+        let is_adjective = current.pos == PartOfSpeech::Adjective || 
+                           (current.pos == PartOfSpeech::Noun && current.sub1 == PartOfSpeechSubcategory1::AdjectiveVerbStem);
+        
+        if current.pos == PartOfSpeech::Verb || is_adjective {
+            let is_te_form = current.full.ends_with("て") || current.full.ends_with("で");
+            let is_verb = current.pos == PartOfSpeech::Verb;
+            
+            let (drain, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut pending_predicate_modifiers).into_iter().partition(|m| {
+                match m {
+                    Modifier::Quotation(_) => is_verb && !is_te_form,
+                    _ => false,
+                }
+            });
+            pending_predicate_modifiers = keep;
+
+            let mut adverbs = Vec::new();
+            let barrier = comma_barrier.unwrap_or(0);
+            let mut j = chunks.len() - 1;
+            while j > barrier {
+                j -= 1;
+                let c = &chunks[j];
+                
+                let mut is_raw_adverb = c.word.pos == PartOfSpeech::Adverb || 
+                                        (c.word.pos == PartOfSpeech::Noun && c.word.sub1 == PartOfSpeechSubcategory1::Adverbial);
+                
+                let mut is_particle_adverb = false;
+                if c.word.pos == PartOfSpeech::Particle && c.word.full == "に" && j > barrier {
+                    let prev_c = &chunks[j - 1];
+                    if prev_c.word.pos == PartOfSpeech::Adverb || 
+                       (prev_c.word.pos == PartOfSpeech::Noun && prev_c.word.sub1 == PartOfSpeechSubcategory1::Adverbial) ||
+                       (prev_c.word.pos == PartOfSpeech::Noun && prev_c.word.sub1 == PartOfSpeechSubcategory1::AdjectiveVerbStem) {
+                        is_particle_adverb = true;
+                        is_raw_adverb = false;
+                    }
+                }
+                
+                if is_particle_adverb {
+                    let ni_chunk = chunks.remove(j);
+                    j -= 1;
+                    let mut adv_chunk = chunks.remove(j);
+                    adv_chunk.particle = Some(ni_chunk.word.clone());
+                    adv_chunk.particle_role = Some(ParticleRole::Adverbial);
+                    adverbs.insert(0, Modifier::AdverbChunk(Box::new(adv_chunk)));
+                } else if is_raw_adverb {
+                    let adv_chunk = chunks.remove(j);
+                    adverbs.insert(0, Modifier::AdverbChunk(Box::new(adv_chunk)));
+                }
+            }
+
+            let chunk = chunks.last_mut().unwrap();
+            chunk.modifiers.extend(drain);
+            chunk.modifiers.extend(adverbs);
+        }
 
         let next_token = tokens.get(i + 1);
         let next_str = next_token.map(|t| t.full.as_str());
@@ -135,10 +225,12 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
             // い-adjective modifier
             ProcToken { pos: PartOfSpeech::Adjective, .. } if next_pos == Some(PartOfSpeech::Noun) => {
                 let mut adj_chunk = chunks.pop().unwrap();
-                // Bubble up any modifiers that accidentally attached to the adjective
+                // Bubble up any OTHER modifiers (like Clauses) that accidentally attached to the adjective
                 let extracted = std::mem::take(&mut adj_chunk.modifiers);
-                pending_modifiers.extend(extracted);
-                pending_modifiers.push(Modifier::Adjective(adj_chunk.word));
+                let (adverbs, others): (Vec<_>, Vec<_>) = extracted.into_iter().partition(|m| matches!(m, Modifier::AdverbChunk(_)));
+                adj_chunk.modifiers = adverbs;
+                pending_modifiers.extend(others);
+                pending_modifiers.push(Modifier::AdjectiveChunk(Box::new(adj_chunk)));
                 i += 1;
             }
 
@@ -158,8 +250,10 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 if !is_ending_no {
                     let mut adj_chunk = chunks.pop().unwrap();
                     let extracted = std::mem::take(&mut adj_chunk.modifiers);
-                    pending_modifiers.extend(extracted);
-                    pending_modifiers.push(Modifier::Adjective(adj_chunk.word));
+                    let (adverbs, others): (Vec<_>, Vec<_>) = extracted.into_iter().partition(|m| matches!(m, Modifier::AdverbChunk(_)));
+                    adj_chunk.modifiers = adverbs;
+                    pending_modifiers.extend(others);
+                    pending_modifiers.push(Modifier::AdjectiveChunk(Box::new(adj_chunk)));
                 }
                 i += 1;
             }
@@ -206,7 +300,7 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                     // but Limitation modifiers stay nested. This is a temporary structural default
                     // pending a larger architectural decision on attachment ambiguity.
                     let (eager, nested): (Vec<_>, Vec<_>) = lim_chunk.modifiers.into_iter().partition(|m| {
-                        matches!(m, Modifier::Adjective(_) | Modifier::Clause(_))
+                        matches!(m, Modifier::AdjectiveChunk(_) | Modifier::Clause(_))
                     });
                     lim_chunk.modifiers = nested;
                     pending_modifiers.extend(eager);
@@ -243,16 +337,10 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                         Modifier::Limitation(lim_chunk) => {
                             chunks.push(*lim_chunk);
                         }
-                        Modifier::Adjective(adj_token) => {
-                            chunks.push(Chunk {
-                                word: adj_token,
-                                particle: None,
-                                secondary_particle: None,
-                                particle_role: None,
-                                modifiers: Vec::new(),
-                                is_head: true,
-                            });
+                        Modifier::AdjectiveChunk(adj_chunk) => {
+                            chunks.push(*adj_chunk);
                         }
+                        _ => {}
                     }
                 }
                 
@@ -426,6 +514,24 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
         });
     }
 
+    // SAFETY FALLBACK: Flush any lingering pending predicate modifiers
+    if !pending_predicate_modifiers.is_empty() {
+        let mut fallback_chunks = Vec::new();
+        let mut is_quotation = false;
+        for modifier in pending_predicate_modifiers {
+            match modifier {
+                Modifier::AdverbChunk(adv_chunk) => fallback_chunks.push(*adv_chunk),
+                Modifier::Quotation(quote_clause) => {
+                    is_quotation = true;
+                    fallback_chunks.extend(quote_clause.chunks);
+                }
+                _ => {}
+            }
+        }
+        let relation = if is_quotation { ClauseRelation::Quotation } else { ClauseRelation::Main };
+        clauses.push(Clause { chunks: fallback_chunks, relation, connective: None, ending_particles: Vec::new() });
+    }
+
     let mut sentence = Sentence { clauses };
 
     // Merge ending particles from a trailing empty clause into the previous clause
@@ -454,7 +560,7 @@ fn assign_particle_roles(clause: &mut Clause) {
     let mut iter = old_chunks.into_iter().peekable();
     
     while let Some(mut chunk) = iter.next() {
-        if chunk.word.pos == PartOfSpeech::Noun {
+        if chunk.word.pos == PartOfSpeech::Noun || chunk.word.pos == PartOfSpeech::Adverb {
             if let Some(next_chunk) = iter.peek() {
                 let next_word = &next_chunk.word;
 
@@ -556,7 +662,7 @@ fn print_clause(clause: &Clause, prefix: &str) {
         
         let is_last = i == chunk_count - 1 && clause.connective.is_none() && clause.ending_particles.is_empty();
         let branch = if is_last { "└──" } else { "├──" };
-        print_chunk(chunk, &child_prefix, branch, false);
+        print_chunk(chunk, &child_prefix, branch, false, false);
     }
     
     if let Some(conn) = &clause.connective {
@@ -570,7 +676,7 @@ fn print_clause(clause: &Clause, prefix: &str) {
     }
 }
 
-fn print_chunk(chunk: &Chunk, prefix: &str, branch: &str, is_limitation: bool) {
+pub fn print_chunk(chunk: &Chunk, prefix: &str, branch: &str, is_limitation: bool, is_adverb: bool) {
     let mod_count = chunk.modifiers.len();
     
     // Modifiers must have a vertical line connecting them down to the Root chunk
@@ -582,18 +688,27 @@ fn print_chunk(chunk: &Chunk, prefix: &str, branch: &str, is_limitation: bool) {
         let mod_branch = if mod_is_first { "┌──" } else { "├──" };
         
         match modifier {
-            Modifier::Adjective(adj) => println!("{}{} mod: {}", mod_child_prefix, mod_branch, adj.full),
+            Modifier::AdjectiveChunk(adj_chunk) => {
+                print_chunk(adj_chunk, &mod_child_prefix, mod_branch, false, false);
+            }
             Modifier::Clause(mod_clause) => {
                 println!("{}{} mod: [Clause]", mod_child_prefix, mod_branch);
                 print_clause(mod_clause, &format!("{}    ", mod_child_prefix));
             }
             Modifier::Limitation(lim_chunk) => {
-                print_chunk(lim_chunk, &mod_child_prefix, mod_branch, true);
+                print_chunk(lim_chunk, &mod_child_prefix, mod_branch, true, false);
+            }
+            Modifier::AdverbChunk(adv_chunk) => {
+                print_chunk(adv_chunk, &mod_child_prefix, mod_branch, false, true);
+            }
+            Modifier::Quotation(quote_clause) => {
+                println!("{}{} mod: [Quotation]", mod_child_prefix, mod_branch);
+                print_clause(quote_clause, &format!("{}    ", mod_child_prefix));
             }
         }
     }
 
-    let node_type = if is_limitation { "lim" } else { "Chunk" };
+    let node_type = if is_limitation { "lim" } else if is_adverb { "adv" } else { "Chunk" };
     
     print!("{}{} {}: {}", prefix, branch, node_type, chunk.word.full);
     if let Some(particle) = &chunk.particle {
