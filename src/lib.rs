@@ -2,6 +2,7 @@ pub mod grammar;
 pub mod jmdict;
 pub mod sentence;
 pub mod labels;
+pub mod llm;
 
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
