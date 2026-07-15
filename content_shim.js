@@ -1,18 +1,36 @@
 (async () => {
   try {
-    const { enabled = true } = await chrome.storage.local.get("enabled");
+    let wasm = null;
 
-    const src = chrome.runtime.getURL("pkg/jongo.js");
-    const { default: init, content_start, set_enabled } = await import(src);
-    await init({ module_or_path: chrome.runtime.getURL("pkg/jongo_bg.wasm") });
+    async function ensureWasm() {
+      if (wasm) return wasm;
+      const src = chrome.runtime.getURL("pkg/jongo.js");
+      const mod = await import(src);
+      await mod.default({ module_or_path: chrome.runtime.getURL("pkg/jongo_bg.wasm") });
+      mod.content_start();
+      wasm = mod;
+      return wasm;
+    }
 
-    // Always start; gate inside Rust
-    content_start();
-    if (!enabled) set_enabled(false);
+    async function applyEnabled(enabled) {
+      if (enabled) {
+        const mod = await ensureWasm();
+        mod.set_enabled(true);
+      } else if (wasm) {
+        wasm.set_enabled(false);
+      }
+    }
+
+    let { enabled } = await chrome.storage.local.get("enabled");
+    if (enabled === undefined) {
+      enabled = true;
+      await chrome.storage.local.set({ enabled: true });
+    }
+    await applyEnabled(enabled);
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === "local" && changes.enabled !== undefined) {
-        set_enabled(changes.enabled.newValue ?? true);
+        applyEnabled(changes.enabled.newValue ?? true);
       }
     });
   } catch (e) {

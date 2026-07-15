@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Jongo",
   "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
   "action": {
     "default_title": "Jongo (on)",
     "default_popup": "popup.html"

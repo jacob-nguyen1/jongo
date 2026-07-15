@@ -11,7 +11,7 @@ use wasm_bindgen::JsCast;
 use web_sys::console;
 
 use crate::grammar::ProcToken;
-use crate::labels::{PartOfSpeechSubcategory1, ParticleRole};
+use crate::labels::{PartOfSpeech, PartOfSpeechSubcategory1, ParticleRole};
 use crate::sentence::{Chunk, Clause, Modifier, Sentence};
 
 const SENTENCE_DELIMITERS: [u16; 4] = ['.' as u16, '。' as u16, '\n' as u16, '…' as u16];
@@ -23,8 +23,21 @@ thread_local! {
 struct AnalysisWindow {
     id: u32,
     element: web_sys::HtmlElement,
+    window: web_sys::Window,
     _closures: Vec<Closure<dyn FnMut()>>,
     _mouse_closures: Vec<Closure<dyn FnMut(web_sys::MouseEvent)>>,
+}
+
+impl Drop for AnalysisWindow {
+    fn drop(&mut self) {
+        let events = ["mousemove", "mouseup"];
+        for (event, closure) in events.iter().zip(self._mouse_closures.iter()) {
+            let _ = self.window.remove_event_listener_with_callback(
+                event,
+                closure.as_ref().unchecked_ref(),
+            );
+        }
+    }
 }
 
 struct JongoController {
@@ -321,6 +334,7 @@ impl JongoController {
         let analysis = AnalysisWindow {
             id,
             element,
+            window,
             _closures: vec![close_cb],
             _mouse_closures: vec![drag_move, drag_end],
         };
@@ -386,6 +400,15 @@ pub fn content_start() {
         .add_event_listener_with_callback("keydown", key_cb.as_ref().unchecked_ref())
         .unwrap();
     key_cb.forget();
+
+    warmup();
+}
+
+/// Eagerly initialize Lindera and dictionary data so the first jong click is fast.
+fn warmup() {
+    let _ = grammar::analyze_sentence("あ");
+    let _ = crate::jmdict::lookup_first_result("あ", PartOfSpeech::Noun, false);
+    let _ = crate::jmdict::lookup_first_result("東京", PartOfSpeech::Noun, true);
 }
 
 #[wasm_bindgen]

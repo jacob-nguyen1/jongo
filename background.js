@@ -5,9 +5,17 @@ async function syncBadge(enabled) {
   });
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
-  await chrome.storage.local.set({ enabled: true });
-  await syncBadge(true);
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details.reason === "install") {
+    await chrome.storage.local.set({ enabled: true });
+  }
+  const { enabled = true } = await chrome.storage.local.get("enabled");
+  await syncBadge(enabled);
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  const { enabled = true } = await chrome.storage.local.get("enabled");
+  await syncBadge(enabled);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
