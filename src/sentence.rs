@@ -28,6 +28,7 @@ impl Clause {
 #[derive(Debug)]
 pub struct Chunk {
     pub word: ProcToken,
+    pub prefix: Option<ProcToken>,
     pub particle: Option<ProcToken>,
     pub secondary_particle: Option<ProcToken>,
     pub particle_role: Option<ParticleRole>,
@@ -56,6 +57,9 @@ impl Chunk {
         }
         
         if self.word.pos != PartOfSpeech::Symbol {
+            if let Some(p) = &self.prefix {
+                s.push_str(&p.full);
+            }
             s.push_str(&self.word.full);
             if let Some(p) = &self.particle {
                 s.push_str(&p.full);
@@ -105,12 +109,13 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
     let mut clauses: Vec<Clause> = Vec::new();
     let mut chunks: Vec<Chunk> = Vec::new();
     let mut pending_modifiers: Vec<Modifier> = Vec::new();
+    let mut pending_prefix: Option<ProcToken> = None;
     let mut pending_ending_particles: Vec<ProcToken> = Vec::new();
     let mut comma_barrier: Option<usize> = None; // chunks.len() at time of last comma
     
     let mut i = 0;
     while i < tokens.len() {
-        let current = &tokens[i];
+        let current = tokens.get(i).unwrap();
 
         // Comma barrier: record position in chunks vec, skip the comma token
         if current.pos == PartOfSpeech::Symbol && current.sub1 == PartOfSpeechSubcategory1::Comma {
@@ -136,6 +141,7 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 if let Some(inner_sentence) = build_sentence(inner_tokens) {
                     chunks.push(Chunk {
                         word: current.clone(), // Use the opening parenthesis as the dummy head
+                        prefix: None,
                         particle: None,
                         secondary_particle: None,
                         particle_role: None,
@@ -152,9 +158,15 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                 continue;
             }
         }
+        if current.pos == PartOfSpeech::Prefix {
+            pending_prefix = Some(current.clone());
+            i += 1;
+            continue;
+        }
         
         chunks.push(Chunk {
             word: tokens.get(i).unwrap().clone(),
+            prefix: std::mem::take(&mut pending_prefix),
             particle: None,
             secondary_particle: None,
             particle_role: None,
@@ -246,7 +258,7 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                             noun_chunk.particle = Some(particle_token);
                             noun_chunk
                         } else {
-                            Chunk { word: particle_token, particle: None, secondary_particle: None, particle_role: None, modifiers: Vec::new(), is_head: true }
+                            Chunk { word: particle_token, prefix: None, particle: None, secondary_particle: None, particle_role: None, modifiers: Vec::new(), is_head: true }
                         }
                     } else {
                         let mut prev_chunk = prev_chunk;
@@ -473,7 +485,7 @@ fn package_clause(mut chunks: Vec<Chunk>, relation: ClauseRelation, connective: 
         return Clause {
             predicate: Chunk {
                 word: ProcToken { full: "".to_string(), base: "".to_string(), pos: PartOfSpeech::Symbol, sub1: PartOfSpeechSubcategory1::X, sub2: PartOfSpeechSubcategory2::X, conjugation: None, staircase: None },
-                particle: None, secondary_particle: None, particle_role: None, modifiers: Vec::new(), is_head: true
+                prefix: None, particle: None, secondary_particle: None, particle_role: None, modifiers: Vec::new(), is_head: true
             },
             relation, connective, ending_particles
         };
@@ -645,7 +657,13 @@ pub fn print_chunk(chunk: &Chunk, prefix: &str, branch: &str, is_limitation: boo
 
     let node_type = if is_limitation { "lim" } else if is_adverb { "adv" } else { "n" };
     
-    print!("{}{} {}: {}", prefix, branch, node_type, chunk.word.full);
+    let mut full_text = String::new();
+    if let Some(pref) = &chunk.prefix {
+        full_text.push_str(&format!("{} + ", pref.full));
+    }
+    full_text.push_str(&chunk.word.full);
+    
+    print!("{}{} {}: {}", prefix, branch, node_type, full_text);
     if let Some(particle) = &chunk.particle {
         let mut p_text = particle.full.clone();
         if let Some(p2) = &chunk.secondary_particle {
