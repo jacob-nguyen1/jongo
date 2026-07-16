@@ -193,9 +193,9 @@ impl JongoController {
         element.style().set_property("box-sizing", "border-box").unwrap();
         element.style().set_property("overflow", "hidden").unwrap();
         let tokens = grammar::analyze_sentence(sentence);
-        let mut details: Vec<String> = Vec::new();
+        let mut chunk_data: Vec<(grammar::ProcToken, Option<grammar::ProcToken>, Option<labels::ParticleRole>)> = Vec::new();
         let left = crate::sentence::build_sentence(tokens)
-            .map(|s| render_structure(&s, &mut details))
+            .map(|s| render_structure(&s, &mut chunk_data))
             .unwrap_or_else(|| "<div>could not parse</div>".to_string());
 
         let html = format!(
@@ -243,8 +243,9 @@ impl JongoController {
             else {
                 return;
             };
-            if let Some(detail_html) = details.get(idx) {
-                detail_panel.set_inner_html(detail_html);
+            if let Some((word, particle, role)) = chunk_data.get(idx) {
+                let detail_html = render_detail(word, particle.as_ref(), role.as_ref());
+                detail_panel.set_inner_html(&detail_html);
             }
         });
         element.add_event_listener_with_callback("click", detail_cb.as_ref().unchecked_ref()).unwrap();
@@ -401,23 +402,25 @@ pub fn set_enabled(on: bool) {
     });
 }
 
-fn render_structure(sentence: &Sentence, details: &mut Vec<String>) -> String {
+type ChunkData = (ProcToken, Option<ProcToken>, Option<ParticleRole>);
+
+fn render_structure(sentence: &Sentence, chunk_data: &mut Vec<ChunkData>) -> String {
     let mut html = String::from("<div class='jong-structure'>");
     for clause in &sentence.clauses {
-        html.push_str(&render_clause(clause, details));
+        html.push_str(&render_clause(clause, chunk_data));
     }
     html.push_str("</div>");
     html
 }
 
-fn render_clause(clause: &Clause, details: &mut Vec<String>) -> String {
+fn render_clause(clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
     let color = clause.relation.color();
     let label = clause.relation.label();
     let mut html = format!(
         "<div style='border:1px solid {color};border-radius:4px;margin-bottom:10px;padding:6px 8px'>\
          <div style='font-size:10px;color:{color};margin-bottom:6px'>{label}</div>"
     );
-    html.push_str(&render_chunk_group(&clause.predicate, 0, details));
+    html.push_str(&render_chunk_group(&clause.predicate, 0, chunk_data));
     if let Some(conn) = &clause.connective {
         html.push_str(&format!(
             "<div style='margin-top:6px;font-size:14px;font-weight:600;color:{color}'>{}</div>",
@@ -428,35 +431,35 @@ fn render_clause(clause: &Clause, details: &mut Vec<String>) -> String {
     html
 }
 
-fn render_chunk_group(chunk: &Chunk, depth: usize, details: &mut Vec<String>) -> String {
+fn render_chunk_group(chunk: &Chunk, depth: usize, chunk_data: &mut Vec<ChunkData>) -> String {
     let margin = if depth == 0 { 10 } else { 2 };
     let mut html = format!("<div style='margin-top:{margin}px'>");
     for modifier in &chunk.modifiers {
-        html.push_str(&render_modifier(modifier, depth + 1, details));
+        html.push_str(&render_modifier(modifier, depth + 1, chunk_data));
     }
     html.push_str(&render_row(
         &chunk.word,
         chunk.particle.as_ref(),
         chunk.particle_role.as_ref(),
         depth,
-        details,
+        chunk_data,
     ));
     html.push_str("</div>");
     html
 }
 
-fn render_modifier(modifier: &Modifier, depth: usize, details: &mut Vec<String>) -> String {
+fn render_modifier(modifier: &Modifier, depth: usize, chunk_data: &mut Vec<ChunkData>) -> String {
     match modifier {
-        Modifier::AdjectiveChunk(chunk) => render_chunk_group(chunk, depth, details),
-        Modifier::AdverbChunk(chunk) => render_chunk_group(chunk, depth, details),
-        Modifier::NounChunk(chunk) => render_chunk_group(chunk, depth, details),
-        Modifier::Limitation(chunk) => render_chunk_group(chunk, depth, details),
-        Modifier::Quotation(sentence) => render_structure(sentence, details),
+        Modifier::AdjectiveChunk(chunk) => render_chunk_group(chunk, depth, chunk_data),
+        Modifier::AdverbChunk(chunk) => render_chunk_group(chunk, depth, chunk_data),
+        Modifier::NounChunk(chunk) => render_chunk_group(chunk, depth, chunk_data),
+        Modifier::Limitation(chunk) => render_chunk_group(chunk, depth, chunk_data),
+        Modifier::Quotation(sentence) => render_structure(sentence, chunk_data),
         // Recursively break modifier clauses into individual token rows,
         // indented one level deeper than their head.
         Modifier::Clause(clause) => {
             let mut html = String::new();
-            html.push_str(&render_chunk_group(&clause.predicate, depth, details));
+            html.push_str(&render_chunk_group(&clause.predicate, depth, chunk_data));
             html
         }
     }
@@ -467,10 +470,10 @@ fn render_row(
     particle: Option<&ProcToken>,
     role: Option<&ParticleRole>,
     depth: usize,
-    details: &mut Vec<String>,
+    chunk_data: &mut Vec<ChunkData>,
 ) -> String {
-    let id = details.len();
-    details.push(render_detail(word, particle, role));
+    let id = chunk_data.len();
+    chunk_data.push((word.clone(), particle.cloned(), role.cloned()));
 
     let indent = depth * 14;
     let (size, color, weight) = if depth == 0 {

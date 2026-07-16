@@ -15,8 +15,14 @@ pub fn generate_prompt(ast: &Sentence, sentence_str: &str) -> String {
         }
         
         // Collect vocabulary with multiple definitions
-        if chunk.word.definitions.len() > 1 {
-            vocabulary.push((chunk.word.full.clone(), chunk.word.definitions.clone()));
+        let is_proper_noun = chunk.word.sub1 == crate::labels::PartOfSpeechSubcategory1::ProperNoun;
+        let glosses: Vec<String> = crate::jmdict::lookup(&chunk.word.base, chunk.word.pos.clone(), is_proper_noun)
+            .into_iter()
+            .flat_map(|r| r.glosses)
+            .collect();
+            
+        if glosses.len() > 1 {
+            vocabulary.push((chunk.word.full.clone(), glosses));
         }
         
         // Process nested modifiers

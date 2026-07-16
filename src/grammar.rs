@@ -47,7 +47,6 @@ pub struct ProcToken {
     pub sub2: PartOfSpeechSubcategory2,
     pub conjugation: Option<ConjugationFeatures>,
     pub staircase: Option<Vec<StaircaseStep>>,
-    pub definitions: Vec<String>,
 }
 
 impl ProcToken{
@@ -118,7 +117,6 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 sub2: PartOfSpeechSubcategory2::X,
                 conjugation: None,
                 staircase: None,
-                definitions: Vec::new(),
             });
             i += 3;
             continue;
@@ -281,7 +279,6 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 negimperative,
             }),
             staircase,
-            definitions: crate::jmdict::lookup(&base, pos.clone(), sub1 == PartOfSpeechSubcategory1::ProperNoun).into_iter().flat_map(|x| x.glosses).collect(),
         });
         i += 1;
     }
