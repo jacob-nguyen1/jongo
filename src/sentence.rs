@@ -97,7 +97,38 @@ fn extract_adverbs(chunks: &mut Vec<Chunk>) -> Vec<Modifier> {
 
 
 
-pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
+pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
+    if tokens.is_empty() {
+        return None;
+    }
+
+    // Strip surrounding parentheses if they encompass the ENTIRE tokens array
+    if tokens.len() >= 2
+        && tokens.first()?.pos == PartOfSpeech::Symbol
+        && tokens.first()?.sub1 == PartOfSpeechSubcategory1::OpenParenthesis
+        && tokens.last()?.pos == PartOfSpeech::Symbol
+        && tokens.last()?.sub1 == PartOfSpeechSubcategory1::ClosedParenthesis
+    {
+        let mut depth = 0;
+        let mut closes_at_end = false;
+        for (idx, t) in tokens.iter().enumerate() {
+            if t.pos == PartOfSpeech::Symbol && t.sub1 == PartOfSpeechSubcategory1::OpenParenthesis {
+                depth += 1;
+            } else if t.pos == PartOfSpeech::Symbol && t.sub1 == PartOfSpeechSubcategory1::ClosedParenthesis {
+                depth -= 1;
+                if depth == 0 {
+                    closes_at_end = idx == tokens.len() - 1;
+                    break;
+                }
+            }
+        }
+        if closes_at_end {
+            tokens.pop();
+            tokens.remove(0);
+            return build_sentence(tokens);
+        }
+    }
+
     let tokens: Vec<ProcToken> = tokens
         .into_iter()
         .filter(|t| t.pos != PartOfSpeech::Symbol || 

@@ -17,6 +17,12 @@ use crate::sentence::{Chunk, Clause, Modifier, Sentence};
 
 const SENTENCE_DELIMITERS: [u16; 4] = ['.' as u16, '。' as u16, '\n' as u16, '…' as u16];
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = window, js_name = __jongo_fetch_llm)]
+    async fn fetch_llm(prompt: &str) -> JsValue;
+}
+
 thread_local! {
     static CONTROLLER: RefCell<JongoController> = RefCell::new(JongoController::new());
 }
@@ -196,10 +202,12 @@ impl JongoController {
         element.style().set_property("box-sizing", "border-box").unwrap();
         element.style().set_property("overflow", "hidden").unwrap();
         let tokens = grammar::analyze_sentence(sentence);
-        let mut chunk_data: Vec<(grammar::ProcToken, Option<grammar::ProcToken>, Option<labels::ParticleRole>)> = Vec::new();
+        let mut chunk_data: Vec<ChunkData> = Vec::new();
         let left = crate::sentence::build_sentence(tokens)
             .map(|s| render_structure(&s, &mut chunk_data))
             .unwrap_or_else(|| "<div>could not parse</div>".to_string());
+
+        let chunk_data_rc = Rc::new(RefCell::new(chunk_data));
 
         let html = format!(
             "<style>\
@@ -236,6 +244,8 @@ impl JongoController {
 
         // delegated click: chunk row -> detail panel
         let detail_panel = element.query_selector(".jong-detail").unwrap().unwrap();
+        let chunk_data_for_click = chunk_data_rc.clone();
+        
         let detail_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
             let Some(target) = e.target() else { return };
             let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
@@ -246,13 +256,60 @@ impl JongoController {
             else {
                 return;
             };
-            if let Some((word, particle, role)) = chunk_data.get(idx) {
-                let detail_html = render_detail(word, particle.as_ref(), role.as_ref());
+            let cd = chunk_data_for_click.borrow();
+            if let Some((word, particle, role, selected_def)) = cd.get(idx) {
+                let detail_html = render_detail(word, particle.as_ref(), role.as_ref(), *selected_def);
                 detail_panel.set_inner_html(&detail_html);
             }
         });
         element.add_event_listener_with_callback("click", detail_cb.as_ref().unchecked_ref()).unwrap();
         detail_cb.forget();
+
+        // AI button click handler
+        if let Some(ai_btn) = element.query_selector(".refine-ai-btn").unwrap() {
+            if let Some(ast) = crate::sentence::build_sentence(grammar::analyze_sentence(sentence)) {
+                let sentence_str = sentence.to_string();
+                let prompt = crate::llm::generate_prompt(&ast, &sentence_str);
+                let container = element.clone();
+                let chunk_data_for_ai = chunk_data_rc.clone();
+                
+                let ai_cb = Closure::<dyn FnMut()>::new(move || {
+                    let prompt = prompt.clone();
+                    let container = container.clone();
+                    let chunk_data_for_ai = chunk_data_for_ai.clone();
+                    
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if let Some(btn) = container.query_selector(".refine-ai-btn").unwrap() {
+                            let btn_html = btn.dyn_into::<web_sys::HtmlElement>().unwrap();
+                            btn_html.set_inner_text("⏳ Thinking...");
+                            btn_html.style().set_property("pointer-events", "none").unwrap();
+                            btn_html.style().set_property("opacity", "0.5").unwrap();
+                            
+                            let res = fetch_llm(&prompt).await;
+                            if let Some(res_str) = res.as_string() {
+                                // Strip markdown code fences if the LLM added them
+                                let json_str = strip_code_fences(&res_str);
+                                console::log_1(&format!("LLM response: {}", json_str).into());
+                                match serde_json::from_str::<crate::llm::LlmResponse>(&json_str) {
+                                    Ok(parsed) => {
+                                        apply_llm_results(&container, parsed, &chunk_data_for_ai);
+                                        btn_html.set_inner_text("✅ Disambiguated");
+                                    }
+                                    Err(e) => {
+                                        console::error_1(&format!("JSON parse error: {}", e).into());
+                                        btn_html.set_inner_text("❌ JSON Error");
+                                    }
+                                }
+                            } else {
+                                btn_html.set_inner_text("❌ Setup Key in Popup");
+                            }
+                        }
+                    });
+                });
+                ai_btn.add_event_listener_with_callback("click", ai_cb.as_ref().unchecked_ref()).unwrap();
+                ai_cb.forget();
+            }
+        }
 
         // drag handle
         let dragging = Rc::new(RefCell::new(false));
@@ -405,10 +462,91 @@ pub fn set_enabled(on: bool) {
     });
 }
 
-type ChunkData = (ProcToken, Option<ProcToken>, Option<ParticleRole>);
+fn strip_code_fences(s: &str) -> String {
+    let trimmed = s.trim();
+    // Strip ```json ... ``` or ``` ... ```
+    if trimmed.starts_with("```") {
+        let without_open = if let Some(after_first_line) = trimmed.strip_prefix("```json") {
+            after_first_line
+        } else if let Some(after_first_line) = trimmed.strip_prefix("```") {
+            after_first_line
+        } else {
+            return trimmed.to_string();
+        };
+        // Remove leading newline after opening fence
+        let without_open = without_open.strip_prefix('\n').unwrap_or(without_open);
+        // Remove closing fence
+        if let Some(body) = without_open.strip_suffix("```") {
+            return body.trim_end().to_string();
+        }
+        return without_open.to_string();
+    }
+    trimmed.to_string()
+}
+
+fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResponse, chunk_data: &Rc<RefCell<Vec<ChunkData>>>) {
+    let mut cd = chunk_data.borrow_mut();
+    
+    for dis in response.disambiguations {
+        let idx = dis.chunk_id;
+        
+        if dis.disambiguation_type == "particle_role" {
+            if let Some(role_str) = dis.result.as_str() {
+                // Parse the string back to an actual ParticleRole enum
+                if let Some(resolved_role) = ParticleRole::from_str(role_str) {
+                    // Mutate the ChunkData to store the resolved role
+                    if let Some(entry) = cd.get_mut(idx) {
+                        entry.2 = Some(resolved_role.clone());
+                    }
+                    
+                    // Update the badge in the DOM
+                    if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
+                        if let Some(badge) = row.query_selector(".ambiguous-badge").unwrap() {
+                            badge.set_inner_html(resolved_role.badge());
+                            badge.set_class_name("resolved-badge");
+                            if let Ok(badge_html) = badge.dyn_into::<web_sys::HtmlElement>() {
+                                let _ = badge_html.style().set_property("border-color", "#4a9");
+                                let _ = badge_html.style().set_property("color", "#4a9");
+                                let _ = badge_html.style().set_property("font-weight", "600");
+                            }
+                        }
+                    }
+                } else {
+                    console::warn_1(&format!("LLM returned unknown role '{}' for chunk_id {}", role_str, idx).into());
+                }
+            }
+        } else if dis.disambiguation_type == "vocabulary" {
+            if let Some(def_idx) = dis.result.as_i64() {
+                // Mutate the ChunkData to store the selected definition
+                if let Some(entry) = cd.get_mut(idx) {
+                    entry.3 = Some(def_idx as usize);
+                }
+                
+                // Trigger a click on the row to refresh the detail panel
+                if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
+                    if let Ok(row_html) = row.dyn_into::<web_sys::HtmlElement>() {
+                        row_html.click();
+                    }
+                }
+            }
+        }
+    }
+}
+
+type ChunkData = (ProcToken, Option<ProcToken>, Option<ParticleRole>, Option<usize>);
 
 fn render_structure(sentence: &Sentence, chunk_data: &mut Vec<ChunkData>) -> String {
-    let mut html = String::from("<div class='jong-structure'>");
+    let mut html = String::from("<div class='jong-structure' style='position:relative'>");
+    
+    html.push_str(
+        "<div style='text-align:right;margin-bottom:8px'>\
+         <button class='refine-ai-btn' style='\
+            background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 8px; \
+            font-size:11px; cursor:pointer; color:#333; font-weight:500;'>\
+            Disambiguate\
+         </button></div>"
+    );
+
     for clause in &sentence.clauses {
         html.push_str(&render_clause(clause, chunk_data));
     }
@@ -476,7 +614,7 @@ fn render_row(
     chunk_data: &mut Vec<ChunkData>,
 ) -> String {
     let id = chunk_data.len();
-    chunk_data.push((word.clone(), particle.cloned(), role.cloned()));
+    chunk_data.push((word.clone(), particle.cloned(), role.cloned(), None));
 
     let indent = depth * 14;
     let (size, color, weight) = if depth == 0 {
@@ -494,8 +632,11 @@ fn render_row(
         html.push_str(&format!(" <span style='color:{color}'>{}</span>", p.full));
     }
     if let Some(r) = role {
+        let is_ambig = matches!(r, ParticleRole::Ambiguous(_));
+        let class = if is_ambig { "ambiguous-badge" } else { "resolved-badge" };
         html.push_str(&format!(
-            " <span style='font-size:10px;color:#666;border:1px solid #ccc;border-radius:3px;padding:0 4px'>{}</span>",
+            " <span class='{}' style='font-size:10px;color:#666;border:1px solid #ccc;border-radius:3px;padding:0 4px'>{}</span>",
+            class,
             r.badge()
         ));
     }
@@ -503,7 +644,7 @@ fn render_row(
     html
 }
 
-fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, role: Option<&ParticleRole>) -> String {
+fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, role: Option<&ParticleRole>, selected_def: Option<usize>) -> String {
     let mut html = String::from("<div style='font-size:12px;line-height:1.6'>");
 
     html.push_str(&format!(
@@ -530,11 +671,47 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, role: Option<&P
                 "<div><span style='color:#888'>POS:</span> {:?}</div>",
                 word.pos
             ));
-            html.push_str(&format!(
-                "<div style='margin-top:4px'>{}{}</div>",
-                hit.glosses.join(", "),
-                type_hint
-            ));
+            
+            html.push_str(&format!("<div style='margin-top:4px'><strong>Definitions:</strong>{}</div>", type_hint));
+            html.push_str("<div style='max-height:150px;overflow-y:auto;background:#fafafa;border:1px solid #eee;border-radius:4px;padding:8px 8px 8px 24px;margin-top:2px'>");
+            html.push_str("<ol style='margin:0;padding:0;color:#333'>");
+            
+            // If there's a selected def, maybe show a toggle
+            let is_resolved = selected_def.is_some();
+            
+            for (i, def) in hit.glosses.iter().enumerate() {
+                let is_correct = selected_def.map(|s| s == i).unwrap_or(false);
+                let (display, weight, opacity) = if is_resolved && !is_correct {
+                    ("none", "400", "0.5")
+                } else if is_correct {
+                    ("list-item", "700", "1")
+                } else {
+                    ("list-item", "400", "1")
+                };
+                
+                html.push_str(&format!(
+                    "<li class='def-item' data-idx='{}' style='margin-bottom:4px;font-weight:{};opacity:{};display:{}'>{}</li>", 
+                    i, weight, opacity, display, def
+                ));
+            }
+            html.push_str("</ol>");
+            
+            if is_resolved {
+                html.push_str("<div style='margin-top:8px;font-size:11px;text-align:center'>");
+                html.push_str("<button onclick='\
+                    let items = this.parentElement.parentElement.querySelectorAll(\".def-item\");\
+                    let isHidden = items[0].style.display === \"none\" || items[1]?.style.display === \"none\";\
+                    for (let i=0; i<items.length; i++) { \
+                        items[i].style.display = \"list-item\"; \
+                        if (isHidden) { items[i].style.opacity = items[i].style.fontWeight === \"700\" ? \"1\" : \"0.5\"; } \
+                        else if (items[i].style.fontWeight !== \"700\") { items[i].style.display = \"none\"; } \
+                    }\
+                    this.innerText = isHidden ? \"Hide other definitions\" : \"Show other definitions\";\
+                ' style='background:none;border:none;color:#4a9;cursor:pointer;text-decoration:underline'>Show other definitions</button>");
+                html.push_str("</div>");
+            }
+            
+            html.push_str("</div>");
         }
         None => {
             html.push_str(&format!(

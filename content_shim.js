@@ -15,6 +15,30 @@
         set_enabled(changes.enabled.newValue ?? true);
       }
     });
+
+    window.__jongo_fetch_llm = async (prompt) => {
+      const data = await chrome.storage.local.get(["llmUrl", "llmKey"]);
+      if (!data.llmUrl || !data.llmKey) {
+        console.error("Jongo: LLM URL or Key is missing. Configure in popup.");
+        return null;
+      }
+      
+      const res = await fetch(data.llmUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${data.llmKey}`
+        },
+        body: JSON.stringify({
+          model: "gemma-4-31b-it",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.1
+        })
+      });
+      
+      const json = await res.json();
+      return json.choices?.[0]?.message?.content || null;
+    };
   } catch (e) {
     console.error("Jongo:", e);
   }

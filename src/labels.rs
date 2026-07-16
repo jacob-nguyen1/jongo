@@ -20,19 +20,7 @@ pub enum PartOfSpeech {
     ERR,
 }
 
-impl PartOfSpeech {
-    pub fn matches_jmdict(&self, p: &jmdict::PartOfSpeech) -> bool {
-        let p_str = format!("{:?}", p).to_lowercase();
-        match self {
-            PartOfSpeech::Noun => p_str.contains("noun"),
-            PartOfSpeech::Verb => p_str.contains("verb"),
-            PartOfSpeech::Adjective => p_str.contains("adjective"),
-            PartOfSpeech::Adverb => p_str.contains("adverb"),
-            PartOfSpeech::Particle => p_str.contains("particle"),
-            _ => true,
-        }
-    }
-}
+
 
 pub static POS_MAP: phf::Map<&'static str, PartOfSpeech> = phf_map! {
     "名詞" => PartOfSpeech::Noun,
@@ -433,6 +421,33 @@ impl ParticleRole {
             Self::Scope => "The scope or boundary of the action.",
             Self::Approximate => "An approximate amount or point.",
             Self::Ambiguous(_) => "Cannot be determined by rule-based parsing alone.",
+        }
+    }
+
+    /// Parse a string (from LLM response) back into a ParticleRole.
+    /// Accepts both Debug names ("IndirectObject") and badge names ("Indirect Object").
+    pub fn from_str(s: &str) -> Option<ParticleRole> {
+        match s {
+            "Subject" => Some(Self::Subject),
+            "Object" => Some(Self::Object),
+            "Topic" => Some(Self::Topic),
+            "IndirectObject" | "Indirect Object" => Some(Self::IndirectObject),
+            "Destination" => Some(Self::Destination),
+            "LocationAction" | "Action Location" => Some(Self::LocationAction),
+            "Means" | "Means/Method" => Some(Self::Means),
+            "Source" => Some(Self::Source),
+            "Limit" => Some(Self::Limit),
+            "Also" => Some(Self::Also),
+            "ComparisonBase" | "Comparison Base" => Some(Self::ComparisonBase),
+            "Accompaniment" => Some(Self::Accompaniment),
+            "Listing" => Some(Self::Listing),
+            "Temporal" | "Time" => Some(Self::Temporal),
+            "Purpose" => Some(Self::Purpose),
+            "Agent" | "Agent (Passive/Causative)" => Some(Self::Agent),
+            "Adverbial" => Some(Self::Adverbial),
+            "Scope" => Some(Self::Scope),
+            "Approximate" => Some(Self::Approximate),
+            _ => None,
         }
     }
 }

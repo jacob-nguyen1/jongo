@@ -1,12 +1,21 @@
-use std::collections::HashMap;
 use std::sync::LazyLock;
 
-/// Must match `NameEntry` in build.rs (postcard schema).
 #[derive(Debug, serde::Deserialize)]
-struct NameEntry {
-    kanji: Vec<String>,
-    kana: String,
-    glosses: Vec<String>,
+struct NameData<'a> {
+    #[serde(borrow)]
+    entries: Vec<NameEntry<'a>>,
+    #[serde(borrow)]
+    by_form: Vec<(&'a str, Vec<u32>)>,
+}
+
+/// Must match `NameData` and `NameEntry` in build.rs (postcard schema).
+#[derive(Debug, serde::Deserialize)]
+struct NameEntry<'a> {
+    #[serde(borrow)]
+    kanji: Vec<&'a str>,
+    kana: &'a str,
+    #[serde(borrow)]
+    glosses: Vec<&'a str>,
     name_type: u8,
 }
 
@@ -42,31 +51,8 @@ pub struct NameHit {
     pub noun_type: ProperNounType,
 }
 
-struct NameIndex {
-    entries: Vec<NameEntry>,
-    by_form: HashMap<String, Vec<u32>>,
-}
-
-static INDEX: LazyLock<NameIndex> = LazyLock::new(NameIndex::load);
-
-impl NameIndex {
-    fn load() -> Self {
-        let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/jmnedict.bin"));
-        let entries: Vec<NameEntry> =
-            postcard::from_bytes(bytes).expect("failed to deserialize jmnedict.bin");
-
-        let mut by_form: HashMap<String, Vec<u32>> = HashMap::new();
-        for (idx, entry) in entries.iter().enumerate() {
-            let idx = idx as u32;
-            for kanji in &entry.kanji {
-                by_form.entry(kanji.clone()).or_default().push(idx);
-            }
-            by_form.entry(entry.kana.clone()).or_default().push(idx);
-        }
-
-        Self { entries, by_form }
-    }
-}
+static JMNEDICT_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/jmnedict.bin"));
+static INDEX: LazyLock<NameData<'static>> = LazyLock::new(|| postcard::from_bytes(JMNEDICT_BYTES).expect("failed to deserialize jmnedict.bin"));
 
 fn decode_name_type(code: u8) -> ProperNounType {
     match code {
@@ -81,9 +67,10 @@ fn decode_name_type(code: u8) -> ProperNounType {
 
 /// Look up a proper noun by kanji or kana reading.
 pub fn lookup_name(word: &str) -> Vec<NameHit> {
-    let Some(indices) = INDEX.by_form.get(word) else {
+    let Ok(idx_in_by_form) = INDEX.by_form.binary_search_by_key(&word, |&(k, _)| k) else {
         return Vec::new();
     };
+    let indices = &INDEX.by_form[idx_in_by_form].1;
 
     let mut hits = Vec::new();
     let mut seen = Vec::new();
@@ -96,8 +83,8 @@ pub fn lookup_name(word: &str) -> Vec<NameHit> {
 
         let entry = &INDEX.entries[idx as usize];
         hits.push(NameHit {
-            kana: entry.kana.clone(),
-            glosses: entry.glosses.clone(),
+            kana: entry.kana.to_string(),
+            glosses: entry.glosses.iter().map(|s| s.to_string()).collect(),
             noun_type: decode_name_type(entry.name_type),
         });
     }

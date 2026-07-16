@@ -97,6 +97,61 @@
         color: #666;
         line-height: 1.4;
       }
+
+      .ai-config {
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid #eee;
+      }
+
+      .ai-config h3 {
+        font-size: 13px;
+        margin-bottom: 8px;
+        color: #333;
+      }
+
+      .input-group {
+        margin-bottom: 12px;
+      }
+
+      .input-group label {
+        display: block;
+        margin-bottom: 4px;
+        color: #666;
+        font-size: 12px;
+      }
+
+      .input-group input {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 13px;
+      }
+
+      button.save-btn {
+        width: 100%;
+        padding: 8px;
+        background: #4a9;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+      }
+      
+      button.save-btn:hover {
+        background: #398;
+      }
+
+      #save-status {
+        text-align: center;
+        margin-top: 8px;
+        font-size: 12px;
+        color: #2a7;
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
     </style>
   </head>
   <body>
@@ -113,6 +168,20 @@
     </div>
 
     <p class="hint">Hold <strong>Shift</strong> and hover over Japanese text to analyze a sentence.</p>
+
+    <div class="ai-config">
+      <h3>AI Disambiguation</h3>
+      <div class="input-group">
+        <label for="llm-url">Endpoint URL</label>
+        <input type="text" id="llm-url" placeholder="https://api.openai.com/v1/chat/completions" />
+      </div>
+      <div class="input-group">
+        <label for="llm-key">API Key</label>
+        <input type="password" id="llm-key" placeholder="sk-..." />
+      </div>
+      <button class="save-btn" id="save-config">Save Settings</button>
+      <div id="save-status">Saved!</div>
+    </div>
 
     <script src="popup.js"></script>
   </body>
