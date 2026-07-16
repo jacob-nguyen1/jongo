@@ -17,26 +17,15 @@ use crate::sentence::{Chunk, Clause, Modifier, Sentence};
 
 const SENTENCE_DELIMITERS: [u16; 4] = ['.' as u16, '。' as u16, '\n' as u16, '…' as u16];
 
-thread_local! {
-    static LLM_FETCHER: RefCell<Option<js_sys::Function>> = RefCell::new(None);
-}
-
-#[wasm_bindgen]
-pub fn set_llm_fetcher(f: js_sys::Function) {
-    LLM_FETCHER.with(|fetcher| {
-        *fetcher.borrow_mut() = Some(f);
-    });
-}
-
 async fn fetch_llm(prompt: &str) -> JsValue {
-    let func = LLM_FETCHER.with(|fetcher| {
-        fetcher.borrow().clone()
-    });
+    let global = js_sys::global();
+    let func_val = js_sys::Reflect::get(&global, &JsValue::from_str("__jongo_fetch_llm"))
+        .unwrap_or(JsValue::UNDEFINED);
     
-    let func = match func {
-        Some(f) => f,
-        None => {
-            console::error_1(&"LLM fetcher function not set via set_llm_fetcher".into());
+    let func: js_sys::Function = match func_val.dyn_into() {
+        Ok(f) => f,
+        Err(_) => {
+            console::error_1(&"__jongo_fetch_llm is not defined on globalThis".into());
             return JsValue::NULL;
         }
     };
@@ -259,7 +248,7 @@ impl JongoController {
              .jong-structure-scroll::-webkit-scrollbar-track{{background:#e8e8e8}}\
              .jong-structure-inner{{direction:ltr;padding:0 8px 0 6px}}\
              </style>\
-             <div class='jong-drag-handle'>Jongo — drag to move</div>\
+             <div class='jong-drag-handle' style='height:8px'></div>\
              <button class='jong-close' style='position:absolute;top:4px;right:4px;background:red;color:white;border:none;cursor:pointer;padding:2px 6px;z-index:1'>✕</button>\
              <div class='jong-body'>\
                <div class='jong-structure-scroll'><div class='jong-structure-inner'>{left}</div></div>\
@@ -319,7 +308,7 @@ impl JongoController {
                     wasm_bindgen_futures::spawn_local(async move {
                         if let Some(btn) = container.query_selector(".refine-ai-btn").unwrap() {
                             let btn_html = btn.dyn_into::<web_sys::HtmlElement>().unwrap();
-                            btn_html.set_inner_text("⏳ Thinking...");
+                            btn_html.set_inner_text("Loading...");
                             btn_html.style().set_property("pointer-events", "none").unwrap();
                             btn_html.style().set_property("opacity", "0.5").unwrap();
                             
@@ -331,15 +320,15 @@ impl JongoController {
                                 match serde_json::from_str::<crate::llm::LlmResponse>(&json_str) {
                                     Ok(parsed) => {
                                         apply_llm_results(&container, parsed, &chunk_data_for_ai);
-                                        btn_html.set_inner_text("✅ Disambiguated");
+                                        btn_html.set_inner_text("Disambiguated");
                                     }
                                     Err(e) => {
                                         console::error_1(&format!("JSON parse error: {}", e).into());
-                                        btn_html.set_inner_text("❌ JSON Error");
+                                        btn_html.set_inner_text("JSON Error");
                                     }
                                 }
                             } else {
-                                btn_html.set_inner_text("❌ Setup Key in Popup");
+                                btn_html.set_inner_text("Setup Key in Popup");
                             }
                         }
                     });
@@ -523,51 +512,59 @@ fn strip_code_fences(s: &str) -> String {
 }
 
 fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResponse, chunk_data: &Rc<RefCell<Vec<ChunkData>>>) {
-    let mut cd = chunk_data.borrow_mut();
+    let mut elements_to_click = Vec::new();
     
-    for dis in response.disambiguations {
-        let idx = dis.chunk_id;
+    {
+        let mut cd = chunk_data.borrow_mut();
         
-        if dis.disambiguation_type == "particle_role" {
-            if let Some(role_str) = dis.result.as_str() {
-                // Parse the string back to an actual ParticleRole enum
-                if let Some(resolved_role) = ParticleRole::from_str(role_str) {
-                    // Mutate the ChunkData to store the resolved role
-                    if let Some(entry) = cd.get_mut(idx) {
-                        entry.2 = Some(resolved_role.clone());
-                    }
-                    
-                    // Update the badge in the DOM
-                    if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
-                        if let Some(badge) = row.query_selector(".ambiguous-badge").unwrap() {
-                            badge.set_inner_html(resolved_role.badge());
-                            badge.set_class_name("resolved-badge");
-                            if let Ok(badge_html) = badge.dyn_into::<web_sys::HtmlElement>() {
-                                let _ = badge_html.style().set_property("border-color", "#4a9");
-                                let _ = badge_html.style().set_property("color", "#4a9");
-                                let _ = badge_html.style().set_property("font-weight", "600");
+        for dis in response.disambiguations {
+            let idx = dis.chunk_id;
+            
+            if dis.disambiguation_type == "particle_role" {
+                if let Some(role_str) = dis.result.as_str() {
+                    // Parse the string back to an actual ParticleRole enum
+                    if let Some(resolved_role) = ParticleRole::from_str(role_str) {
+                        // Mutate the ChunkData to store the resolved role
+                        if let Some(entry) = cd.get_mut(idx) {
+                            entry.2 = Some(resolved_role.clone());
+                        }
+                        
+                        // Update the badge in the DOM
+                        if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
+                            if let Some(badge) = row.query_selector(".ambiguous-badge").unwrap() {
+                                badge.set_inner_html(resolved_role.badge());
+                                badge.set_class_name("resolved-badge");
+                                if let Ok(badge_html) = badge.dyn_into::<web_sys::HtmlElement>() {
+                                    let _ = badge_html.style().set_property("border-color", "#4a9");
+                                    let _ = badge_html.style().set_property("color", "#4a9");
+                                    let _ = badge_html.style().set_property("font-weight", "600");
+                                }
                             }
                         }
+                    } else {
+                        console::warn_1(&format!("LLM returned unknown role '{}' for chunk_id {}", role_str, idx).into());
                     }
-                } else {
-                    console::warn_1(&format!("LLM returned unknown role '{}' for chunk_id {}", role_str, idx).into());
                 }
-            }
-        } else if dis.disambiguation_type == "vocabulary" {
-            if let Some(def_idx) = dis.result.as_i64() {
-                // Mutate the ChunkData to store the selected definition
-                if let Some(entry) = cd.get_mut(idx) {
-                    entry.3 = Some(def_idx as usize);
-                }
-                
-                // Trigger a click on the row to refresh the detail panel
-                if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
-                    if let Ok(row_html) = row.dyn_into::<web_sys::HtmlElement>() {
-                        row_html.click();
+            } else if dis.disambiguation_type == "vocabulary" {
+                if let Some(def_idx) = dis.result.as_i64() {
+                    // Mutate the ChunkData to store the selected definition
+                    if let Some(entry) = cd.get_mut(idx) {
+                        entry.3 = Some(def_idx as usize);
+                    }
+                    
+                    // Trigger a click on the row to refresh the detail panel
+                    if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
+                        if let Ok(row_html) = row.dyn_into::<web_sys::HtmlElement>() {
+                            elements_to_click.push(row_html);
+                        }
                     }
                 }
             }
         }
+    }
+    
+    for el in elements_to_click {
+        el.click();
     }
 }
 
@@ -599,7 +596,7 @@ fn render_clause(clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
         "<div style='border:1px solid {color};border-radius:4px;margin-bottom:10px;padding:6px 8px'>\
          <div style='font-size:10px;color:{color};margin-bottom:6px'>{label}</div>"
     );
-    html.push_str(&render_chunk_group(&clause.predicate, 0, chunk_data));
+    html.push_str(&render_chunk_group(&clause.predicate, "", "", chunk_data));
     if let Some(conn) = &clause.connective {
         html.push_str(&format!(
             "<div style='margin-top:6px;font-size:14px;font-weight:600;color:{color}'>{}</div>",
@@ -610,36 +607,49 @@ fn render_clause(clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
     html
 }
 
-fn render_chunk_group(chunk: &Chunk, depth: usize, chunk_data: &mut Vec<ChunkData>) -> String {
-    let margin = if depth == 0 { 10 } else { 2 };
-    let mut html = format!("<div style='margin-top:{margin}px'>");
-    for modifier in &chunk.modifiers {
-        html.push_str(&render_modifier(modifier, depth + 1, chunk_data));
+fn render_chunk_group(chunk: &Chunk, prefix: &str, branch: &str, chunk_data: &mut Vec<ChunkData>) -> String {
+    let mut html = String::from("<div>");
+    
+    let mod_child_prefix = if prefix.is_empty() && branch.is_empty() {
+        String::new()
+    } else if branch == "┌── " {
+        format!("{}    ", prefix)
+    } else {
+        format!("{}│   ", prefix)
+    };
+    
+    for (i, modifier) in chunk.modifiers.iter().enumerate() {
+        let mod_is_first = i == 0;
+        let mod_branch = if mod_is_first { "┌── " } else { "├── " };
+        html.push_str(&render_modifier(modifier, &mod_child_prefix, mod_branch, chunk_data));
     }
     html.push_str(&render_row(
         &chunk.word,
         chunk.particle.as_ref(),
         chunk.particle_role.as_ref(),
-        depth,
+        prefix,
+        branch,
         chunk_data,
     ));
     html.push_str("</div>");
     html
 }
 
-fn render_modifier(modifier: &Modifier, depth: usize, chunk_data: &mut Vec<ChunkData>) -> String {
+fn render_modifier(modifier: &Modifier, prefix: &str, branch: &str, chunk_data: &mut Vec<ChunkData>) -> String {
     match modifier {
-        Modifier::AdjectiveChunk(chunk) => render_chunk_group(chunk, depth, chunk_data),
-        Modifier::AdverbChunk(chunk) => render_chunk_group(chunk, depth, chunk_data),
-        Modifier::NounChunk(chunk) => render_chunk_group(chunk, depth, chunk_data),
-        Modifier::Limitation(chunk) => render_chunk_group(chunk, depth, chunk_data),
-        Modifier::Quotation(sentence) => render_structure(sentence, chunk_data),
-        // Recursively break modifier clauses into individual token rows,
-        // indented one level deeper than their head.
-        Modifier::Clause(clause) => {
+        Modifier::AdjectiveChunk(chunk) => render_chunk_group(chunk, prefix, branch, chunk_data),
+        Modifier::AdverbChunk(chunk) => render_chunk_group(chunk, prefix, branch, chunk_data),
+        Modifier::NounChunk(chunk) => render_chunk_group(chunk, prefix, branch, chunk_data),
+        Modifier::Limitation(chunk) => render_chunk_group(chunk, prefix, branch, chunk_data),
+        Modifier::Quotation(sentence) => {
             let mut html = String::new();
-            html.push_str(&render_chunk_group(&clause.predicate, depth, chunk_data));
+            for c in &sentence.clauses {
+                html.push_str(&render_clause(c, chunk_data));
+            }
             html
+        },
+        Modifier::Clause(clause) => {
+            render_chunk_group(&clause.predicate, prefix, branch, chunk_data)
         }
     }
 }
@@ -648,23 +658,24 @@ fn render_row(
     word: &ProcToken,
     particle: Option<&ProcToken>,
     role: Option<&ParticleRole>,
-    depth: usize,
+    prefix: &str,
+    branch: &str,
     chunk_data: &mut Vec<ChunkData>,
 ) -> String {
     let id = chunk_data.len();
     chunk_data.push((word.clone(), particle.cloned(), role.cloned(), None));
 
-    let indent = depth * 14;
-    let (size, color, weight) = if depth == 0 {
+    let (size, color, weight) = if prefix.is_empty() && branch.is_empty() {
         ("13px", "#000", "600")
     } else {
         ("12px", "#555", "400")
     };
-
+    
     let mut html = format!(
-        "<div class='jong-row' data-chunk-id='{id}' style='font-size:{size};line-height:1.6;padding:0 4px 0 {indent}px'>\
+        "<div class='jong-row' data-chunk-id='{id}' style='font-size:{size};line-height:1.2;padding:0 4px'>\
+         <span style='font-family:monospace;white-space:pre;color:#888'>{}{}</span>\
          <span style='font-weight:{weight};color:{color}'>{}</span>",
-        word.full
+        prefix, branch, word.full
     );
     if let Some(p) = particle {
         html.push_str(&format!(" <span style='color:{color}'>{}</span>", p.full));

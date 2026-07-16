@@ -3,11 +3,11 @@
     const { enabled = true } = await chrome.storage.local.get("enabled");
 
     const src = chrome.runtime.getURL("pkg/jongo.js");
-    const { default: init, content_start, set_enabled, set_llm_fetcher } = await import(src);
+    const { default: init, content_start, set_enabled } = await import(src);
     await init({ module_or_path: chrome.runtime.getURL("pkg/jongo_bg.wasm") });
 
-    // Explicitly pass our fetch closure into the WASM module
-    set_llm_fetcher(async (prompt) => {
+    // Expose fetcher on globalThis so Rust can read it via js_sys::global()
+    globalThis.__jongo_fetch_llm = async (prompt) => {
       const data = await chrome.storage.local.get(["llmUrl", "llmKey"]);
       if (!data.llmUrl || !data.llmKey) {
         console.error("Jongo: LLM URL or Key is missing. Configure in popup.");
@@ -29,7 +29,7 @@
       
       const json = await res.json();
       return json.choices?.[0]?.message?.content || null;
-    });
+    };
 
     // Always start; gate inside Rust
     content_start();
