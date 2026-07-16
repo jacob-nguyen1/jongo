@@ -84,7 +84,10 @@ impl JongoController {
         let mut found_target = false;
         collect_text_nodes(&block, &node, &mut text_nodes, &mut absolute_offset, offset as usize, &mut found_target);
 
-        let block_text = block.text_content().unwrap_or_default();
+        let mut block_text = String::new();
+        for n in &text_nodes {
+            block_text.push_str(&n.text_content().unwrap_or_default());
+        }
         let text_vec: Vec<u16> = block_text.encode_utf16().collect();
         if absolute_offset >= text_vec.len() { return; }
 
@@ -643,6 +646,10 @@ fn collect_text_nodes(
         }
         text_nodes.push(node.clone());
     } else {
+        let name = node.node_name();
+        if name == "RT" || name == "RP" || name == "rt" || name == "rp" {
+            return;
+        }
         let children = node.child_nodes();
         for i in 0..children.length() {
             if let Some(child) = children.item(i) {
