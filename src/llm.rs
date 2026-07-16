@@ -15,7 +15,7 @@ pub struct LlmDisambiguation {
     pub result: serde_json::Value, // String for particle_role, integer for vocabulary
 }
 
-pub fn generate_prompt(ast: &Sentence, sentence_str: &str) -> String {
+pub fn generate_prompt(ast: &Sentence, sentence_str: &str, context: &str) -> String {
     let mut ambiguous_particles: Vec<(usize, String, Vec<String>)> = Vec::new();
     let mut vocabulary: Vec<(usize, String, Vec<String>)> = Vec::new();
     let mut chunk_id = 0usize;
@@ -78,8 +78,12 @@ pub fn generate_prompt(ast: &Sentence, sentence_str: &str) -> String {
 
     process_sentence(ast, &mut chunk_id, &mut ambiguous_particles, &mut vocabulary);
 
-    let mut prompt = format!("Analyze the Japanese sentence: '{}'.\n", sentence_str);
-    prompt.push_str("I need you to disambiguate grammatical particle roles AND vocabulary definitions based on the sentence context.\n\n");
+    let mut prompt = String::new();
+    if !context.is_empty() && context != sentence_str {
+        prompt.push_str(&format!("Surrounding Context Paragraph:\n\"{}\"\n\n", context));
+    }
+    prompt.push_str(&format!("Target Sentence to Analyze:\n'{}'\n\n", sentence_str));
+    prompt.push_str("I need you to disambiguate grammatical particle roles AND vocabulary definitions based on the sentence and context.\n\n");
     prompt.push_str("Output a JSON object containing an array named 'disambiguations'. Do NOT wrap the output in markdown codeblocks like ```json, just output the raw JSON.\n");
     prompt.push_str("Each item in the array should have:\n");
     prompt.push_str("1. 'chunk_id': The integer chunk ID provided below.\n");

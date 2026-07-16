@@ -304,6 +304,25 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                 i += 1;
             }
 
+            // === REASON ため CLAUSE SEPARATION ===
+            ProcToken { pos: PartOfSpeech::Noun, .. }
+                if (current.base == "ため" || current.base == "為")
+                && !chunks.last().map_or(true, |c| c.modifiers.is_empty())
+                && next_str != Some("の") => {
+                
+                let tame_chunk = chunks.pop().unwrap();
+                let mut connective_token = tame_chunk.word;
+                
+                if let Some(ProcToken { pos: PartOfSpeech::Particle, .. }) = next_token {
+                    connective_token.full.push_str(next_str.unwrap());
+                    i += 1;
+                }
+                
+                clauses.push(package_clause(chunks, ClauseRelation::Reason, Some(connective_token), std::mem::take(&mut pending_ending_particles)));
+                chunks = Vec::new();
+                i += 1;
+            }
+
             // === TEMPORAL 時 CLAUSE SEPARATION ===
             // When 時 has preceding modifiers (verb clause, の-linked noun, adjective), it marks
             // a temporal subordinate clause boundary.

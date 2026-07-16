@@ -61,6 +61,17 @@ struct AnalysisWindow {
     _mouse_closures: Vec<Closure<dyn FnMut(web_sys::MouseEvent)>>,
 }
 
+impl Drop for AnalysisWindow {
+    fn drop(&mut self) {
+        if let Some(window) = web_sys::window() {
+            if self._mouse_closures.len() >= 2 {
+                let _ = window.remove_event_listener_with_callback("mousemove", self._mouse_closures[0].as_ref().unchecked_ref());
+                let _ = window.remove_event_listener_with_callback("mouseup", self._mouse_closures[1].as_ref().unchecked_ref());
+            }
+        }
+    }
+}
+
 struct JongoController {
     mouse_x: f32,
     mouse_y: f32,
@@ -188,13 +199,14 @@ impl JongoController {
         stop_prop.forget();
 
         let sentence = sentence_str;
+        let context = block_text;
         let btn = element.query_selector("button").unwrap().unwrap();
 
         // closure that runs when jong is clicked
         let cb = Closure::<dyn FnMut()>::new(move || {
             CONTROLLER.with(|c| {
                 if let Ok(mut ctrl) = c.try_borrow_mut() {
-                    ctrl.analyze(&sentence);
+                    ctrl.analyze(&sentence, &context);
                     if let Some(old) = ctrl.prompt.take() {
                         old.remove();
                     }
@@ -208,7 +220,7 @@ impl JongoController {
         self.prompt = Some(element);
     }
 
-    fn analyze(&mut self, sentence: &str) {
+    fn analyze(&mut self, sentence: &str, context: &str) {
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
 
@@ -242,7 +254,7 @@ impl JongoController {
              .jong-row:hover{{background:#eef2f7}}\
              .jong-drag-handle{{cursor:move;padding:6px 28px 6px 10px;background:#f0f0f0;border-bottom:1px solid #ddd;font-size:11px;color:#666;user-select:none;flex-shrink:0}}\
              .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box}}\
-             .jong-structure-scroll{{direction:rtl;overflow-y:auto;flex:1;min-width:0;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8;margin:0}}\
+             .jong-structure-scroll{{direction:rtl;overflow-y:auto;flex:1;min-width:0;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8;margin:0;user-select:none}}\
              .jong-structure-scroll::-webkit-scrollbar{{width:5px}}\
              .jong-structure-scroll::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
              .jong-structure-scroll::-webkit-scrollbar-track{{background:#e8e8e8}}\
@@ -296,7 +308,8 @@ impl JongoController {
         if let Some(ai_btn) = element.query_selector(".refine-ai-btn").unwrap() {
             if let Some(ast) = crate::sentence::build_sentence(grammar::analyze_sentence(sentence)) {
                 let sentence_str = sentence.to_string();
-                let prompt = crate::llm::generate_prompt(&ast, &sentence_str);
+                let context_str = context.to_string();
+                let prompt = crate::llm::generate_prompt(&ast, &sentence_str, &context_str);
                 let container = element.clone();
                 let chunk_data_for_ai = chunk_data_rc.clone();
                 
@@ -598,8 +611,10 @@ fn render_clause(clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
     );
     html.push_str(&render_chunk_group(&clause.predicate, "", "", chunk_data));
     if let Some(conn) = &clause.connective {
+        let id = chunk_data.len();
+        chunk_data.push((conn.clone(), None, None, None));
         html.push_str(&format!(
-            "<div style='margin-top:6px;font-size:14px;font-weight:600;color:{color}'>{}</div>",
+            "<div class='jong-row' data-chunk-id='{id}' style='margin-top:6px;font-size:14px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
             conn.full
         ));
     }
