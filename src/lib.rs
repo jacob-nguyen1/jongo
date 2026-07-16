@@ -17,10 +17,48 @@ use crate::sentence::{Chunk, Clause, Modifier, Sentence};
 
 const SENTENCE_DELIMITERS: [u16; 4] = ['.' as u16, '。' as u16, '\n' as u16, '…' as u16];
 
+thread_local! {
+    static LLM_FETCHER: RefCell<Option<js_sys::Function>> = RefCell::new(None);
+}
+
 #[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = window, js_name = __jongo_fetch_llm)]
-    async fn fetch_llm(prompt: &str) -> JsValue;
+pub fn set_llm_fetcher(f: js_sys::Function) {
+    LLM_FETCHER.with(|fetcher| {
+        *fetcher.borrow_mut() = Some(f);
+    });
+}
+
+async fn fetch_llm(prompt: &str) -> JsValue {
+    let func = LLM_FETCHER.with(|fetcher| {
+        fetcher.borrow().clone()
+    });
+    
+    let func = match func {
+        Some(f) => f,
+        None => {
+            console::error_1(&"LLM fetcher function not set via set_llm_fetcher".into());
+            return JsValue::NULL;
+        }
+    };
+    
+    let promise = match func.call1(&JsValue::NULL, &JsValue::from_str(prompt)) {
+        Ok(p) => p,
+        Err(e) => {
+            console::error_1(&format!("LLM call error: {:?}", e).into());
+            return JsValue::NULL;
+        }
+    };
+    let promise: js_sys::Promise = match promise.dyn_into() {
+        Ok(p) => p,
+        Err(_) => return JsValue::NULL,
+    };
+    match wasm_bindgen_futures::JsFuture::from(promise).await {
+        Ok(val) => val,
+        Err(e) => {
+            console::error_1(&format!("LLM fetch error: {:?}", e).into());
+            JsValue::NULL
+        }
+    }
 }
 
 thread_local! {
