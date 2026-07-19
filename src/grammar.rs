@@ -358,7 +358,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         }
         filtered_tokens.push(ProcToken {
             full: conj,
-            base,
+            base: base.clone(),
             pos: pos,
             sub1,
             sub2,

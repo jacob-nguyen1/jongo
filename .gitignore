@@ -3,3 +3,7 @@
 todo.md
 /tests/
 /src/bin/
+scratch/
+*.orig
+*.rej
+*.patch

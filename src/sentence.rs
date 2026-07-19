@@ -97,7 +97,38 @@ fn extract_adverbs(chunks: &mut Vec<Chunk>) -> Vec<Modifier> {
 
 
 
-pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
+pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
+    if tokens.is_empty() {
+        return None;
+    }
+
+    // Strip surrounding parentheses if they encompass the ENTIRE tokens array
+    if tokens.len() >= 2
+        && tokens.first()?.pos == PartOfSpeech::Symbol
+        && tokens.first()?.sub1 == PartOfSpeechSubcategory1::OpenParenthesis
+        && tokens.last()?.pos == PartOfSpeech::Symbol
+        && tokens.last()?.sub1 == PartOfSpeechSubcategory1::ClosedParenthesis
+    {
+        let mut depth = 0;
+        let mut closes_at_end = false;
+        for (idx, t) in tokens.iter().enumerate() {
+            if t.pos == PartOfSpeech::Symbol && t.sub1 == PartOfSpeechSubcategory1::OpenParenthesis {
+                depth += 1;
+            } else if t.pos == PartOfSpeech::Symbol && t.sub1 == PartOfSpeechSubcategory1::ClosedParenthesis {
+                depth -= 1;
+                if depth == 0 {
+                    closes_at_end = idx == tokens.len() - 1;
+                    break;
+                }
+            }
+        }
+        if closes_at_end {
+            tokens.pop();
+            tokens.remove(0);
+            return build_sentence(tokens);
+        }
+    }
+
     let tokens: Vec<ProcToken> = tokens
         .into_iter()
         .filter(|t| t.pos != PartOfSpeech::Symbol || 
@@ -270,6 +301,25 @@ pub fn build_sentence(tokens: Vec<ProcToken>) -> Option<Sentence> {
                     
                     pending_modifiers.push(Modifier::Limitation(Box::new(lim_chunk)));
                 }
+                i += 1;
+            }
+
+            // === REASON ため CLAUSE SEPARATION ===
+            ProcToken { pos: PartOfSpeech::Noun, .. }
+                if (current.base == "ため" || current.base == "為")
+                && !chunks.last().map_or(true, |c| c.modifiers.is_empty())
+                && next_str != Some("の") => {
+                
+                let tame_chunk = chunks.pop().unwrap();
+                let mut connective_token = tame_chunk.word;
+                
+                if let Some(ProcToken { pos: PartOfSpeech::Particle, .. }) = next_token {
+                    connective_token.full.push_str(next_str.unwrap());
+                    i += 1;
+                }
+                
+                clauses.push(package_clause(chunks, ClauseRelation::Reason, Some(connective_token), std::mem::take(&mut pending_ending_particles)));
+                chunks = Vec::new();
                 i += 1;
             }
 
@@ -523,7 +573,7 @@ fn assign_particle_roles(chunks: &mut Vec<Chunk>) {
     let mut iter = old_chunks.into_iter().peekable();
     
     while let Some(mut chunk) = iter.next() {
-        if chunk.word.pos == PartOfSpeech::Noun || chunk.word.pos == PartOfSpeech::Adverb {
+        if chunk.word.pos == PartOfSpeech::Noun || chunk.word.pos == PartOfSpeech::Adverb || chunk.word.pos == PartOfSpeech::Verb || chunk.word.pos == PartOfSpeech::Adjective {
             if let Some(next_chunk) = iter.peek() {
                 let next_word = &next_chunk.word;
 
@@ -703,7 +753,7 @@ mod tests {
         // 2nd case: 昨日 stays in the main clause.
         // Fix 5: によると evidential expression
         // Fix 6: Bracketed quotation
-        let text = "昨日買った本を読む。昨日、買った本を読む。子供の時、よく遊んだ。天気予報によると明日は雨だ。彼は「行きたくない」と言った。";
+        let text = "先日、薬草を探しに森に出かけてみれば出会ったのは、村人その壱、弐、参という名の人さらいだった。";
         
         for sentence in text.split_inclusive('。') {
             let sentence = sentence.trim();

@@ -1,105 +1,148 @@
-use jmdict::{entries, GlossLanguage, Enum};
-
-
-use std::collections::HashSet;
+use crate::jmnedict::{self, ProperNounType};
 use std::sync::LazyLock;
 
-pub static NATIVE_VERBS: LazyLock<HashSet<String>> = LazyLock::new(|| {
-    let mut set = HashSet::new();
-    for entry in jmdict::entries() {
-        let is_verb = entry.senses().any(|sense| {
-            let jm_pos: Vec<_> = sense.parts_of_speech().collect();
-            jm_pos.iter().any(|p| crate::labels::PartOfSpeech::Verb.matches_jmdict(p))
-        });
-        if is_verb {
-            for k in entry.kanji_elements() {
-                set.insert(k.text.to_string());
-            }
-            for r in entry.reading_elements() {
-                set.insert(r.text.to_string());
-            }
-        }
-    }
-    set
+/// The source dictionary a result came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DictSource {
+    JMdict,
+    JMnedict,
+}
+
+/// A single lookup result, preserving provenance metadata.
+#[derive(Debug, Clone)]
+pub struct LookupResult {
+    pub kana: String,
+    pub glosses: Vec<String>,
+    pub source: DictSource,
+    pub noun_type: ProperNounType,
+}
+
+const JMDICT_BIN: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/jmdict.bin"));
+
+#[derive(Debug, serde::Deserialize)]
+struct JmdictData<'a> {
+    #[serde(borrow)]
+    entries: Vec<JmdictEntry<'a>>,
+    #[serde(borrow)]
+    by_form: Vec<(&'a str, Vec<u32>)>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct JmdictEntry<'a> {
+    kana: &'a str,
+    #[serde(borrow)]
+    glosses: Vec<&'a str>,
+}
+
+static JMDICT_INDEX: LazyLock<JmdictData<'static>> = LazyLock::new(|| {
+    postcard::from_bytes(JMDICT_BIN).expect("failed to decode jmdict.bin")
 });
 
-pub fn is_native_verb(word: &str) -> bool {
-    NATIVE_VERBS.contains(word)
+/// Query JMdict (common vocabulary) and optionally JMnedict (proper nouns).
+pub fn lookup(
+    word: &str,
+    _pos: crate::labels::PartOfSpeech,
+    is_proper_noun: bool,
+) -> Vec<LookupResult> {
+    let mut results = lookup_jmdict(word);
+
+    let should_check_names = results.is_empty() || is_proper_noun;
+    if should_check_names {
+        for hit in jmnedict::lookup_name(word) {
+            results.push(LookupResult {
+                kana: hit.kana,
+                glosses: hit.glosses,
+                source: DictSource::JMnedict,
+                noun_type: hit.noun_type,
+            });
+        }
+    }
+
+    results
 }
 
-pub fn lookup(word: &str, pos: crate::labels::PartOfSpeech) -> Option<(String, Vec<String>)> {
-    for entry in jmdict::entries() {
-        // if the word matches kanji or reading
-        if entry.kanji_elements().any(|k| k.text == word) || entry.reading_elements().any(|r| r.text == word) {
-            // find senses that match the requested part of speech
-            let matching_senses: Vec<_> = entry.senses().filter(|sense| {
-                let jm_pos: Vec<_> = sense.parts_of_speech().collect();
-                if jm_pos.is_empty() {
-                    true // if no POS is explicitly defined for this sense, assume it inherits and might match
-                } else {
-                    jm_pos.iter().any(|p| pos.matches_jmdict(p))
-                }
-            }).collect();
+/// Returns only the first (highest-priority) result.
+pub fn lookup_first(
+    word: &str,
+    pos: crate::labels::PartOfSpeech,
+    is_proper_noun: bool,
+) -> Option<(String, Vec<String>)> {
+    lookup(word, pos, is_proper_noun)
+        .into_iter()
+        .next()
+        .map(|r| (r.kana, r.glosses))
+}
 
-            // if we found any matching senses, return them!
-            if !matching_senses.is_empty() {
-                let kana = entry.reading_elements().next()?.text.to_string();
-                let glosses: Vec<String> = matching_senses.into_iter()
-                    .flat_map(|s| s.glosses())
-                    .filter(|g| g.language == jmdict::GlossLanguage::English)
-                    .map(|g| g.text.to_string())
-                    .collect();
-                return Some((kana, glosses));
+/// Returns the first result with full provenance metadata.
+pub fn lookup_first_result(
+    word: &str,
+    pos: crate::labels::PartOfSpeech,
+    is_proper_noun: bool,
+) -> Option<LookupResult> {
+    lookup(word, pos, is_proper_noun).into_iter().next()
+}
+
+fn lookup_jmdict(word: &str) -> Vec<LookupResult> {
+    let mut results = Vec::new();
+    if let Ok(idx) = JMDICT_INDEX.by_form.binary_search_by_key(&word, |&(f, _)| f) {
+        for &entry_id in &JMDICT_INDEX.by_form[idx].1 {
+            if let Some(entry) = JMDICT_INDEX.entries.get(entry_id as usize) {
+                results.push(LookupResult {
+                    kana: entry.kana.to_string(),
+                    glosses: entry.glosses.iter().map(|&s| s.to_string()).collect(),
+                    source: DictSource::JMdict,
+                    noun_type: ProperNounType::NotApplicable,
+                });
             }
         }
     }
-    None
+    results
 }
 
-
 pub fn debug_word(word: &str) {
-    // finds all jmdict data for a specific word
-    let matches: Vec<_> = jmdict::entries().filter(|e| {
-        e.kanji_elements().any(|k| k.text == word)
-            || e.reading_elements().any(|r| r.text == word)
-    }).collect();
-
+    let matches = lookup_jmdict(word);
     println!("=== {} === ({} entries found)", word, matches.len());
-
-    for entry in matches {
-        let kanji: Vec<_>   = entry.kanji_elements().map(|k| k.text).collect();
-        let reading: Vec<_> = entry.reading_elements().map(|r| r.text).collect();
-        println!("  kanji={:?} reading={:?}", kanji, reading);
-        for (i, sense) in entry.senses().enumerate() {
-            let pos: Vec<_>    = sense.parts_of_speech().map(|p| format!("{:?}", p)).collect();
-            let glosses: Vec<_> = sense.glosses()
-                .filter(|g| g.language == jmdict::GlossLanguage::English)
-                .map(|g| g.text).collect();
-            println!("    sense {}: {:?} → {:?}", i+1, pos, glosses);
-        }
+    for (i, entry) in matches.into_iter().enumerate() {
+        println!("  {}. kana={} glosses={:?}", i + 1, entry.kana, entry.glosses);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::labels::PartOfSpeech;
 
     #[test]
-    fn test_okaasan() {
-        let word = "葉"; // 私は食べる
-        let result = lookup(word, crate::labels::PartOfSpeech::Noun).unwrap();
-        println!("original word: {}\nkana: {}\nenglish: {:?}", word, result.0, result.1);
-        // assert!(result.0.contains("おかあさん"));
-        // assert!(result.1.contains(&"mother"));
+    fn test_leaf_noun() {
+        let word = "葉";
+        let result = lookup_first(word, PartOfSpeech::Noun, false).unwrap();
+        println!(
+            "original word: {}\nkana: {}\nenglish: {:?}",
+            word, result.0, result.1
+        );
+    }
+
+    #[test]
+    fn test_proper_noun_dual_lookup() {
+        let result = lookup_first_result("東京", PartOfSpeech::Noun, true)
+            .expect("expected a result for 東京");
+        assert!(!result.glosses.is_empty());
+    }
+
+    #[test]
+    fn test_jmnedict_fallback_when_jmdict_misses() {
+        let word = "網走";
+        if lookup_jmdict(word).is_empty() {
+            let result = lookup_first_result(word, PartOfSpeech::Noun, false)
+                .expect("expected JMnedict fallback for 網走");
+            assert_eq!(result.source, DictSource::JMnedict);
+        }
     }
 
     #[test]
     fn debug() {
-        debug_word("食べる");
-        debug_word("見せる");
-        debug_word("教える");
-        debug_word("乗れる");
-        debug_word("洗える");
-        debug_word("飛べる");
+        debug_word("は");
+        debug_word("に");
+        debug_word("串焼き");
     }
 }
