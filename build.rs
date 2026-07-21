@@ -136,6 +136,7 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=JONGO_JMNEDICT_PATH");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=custom_dict.csv");
 
     let json_path = acquire_json(JMNEDICT_URL, JMNEDICT_JSON_NAME, Some(JMNEDICT_SHA256), "JONGO_JMNEDICT_PATH");
     let entries = process_json(&json_path);
@@ -170,6 +171,49 @@ fn main() {
         name_data.entries.len(),
         bytes.len()
     );
+
+    // === Custom user dictionary for Lindera ===
+    let custom_csv = Path::new("custom_dict.csv");
+    let custom_bin = out_dir.join("custom_dict.bin");
+    if custom_csv.exists() {
+        use lindera_dictionary::dictionary::metadata::Metadata;
+        use lindera_dictionary::builder::DictionaryBuilder;
+
+        // Use the same metadata.json that lindera-ipadic uses
+        let metadata_json = r#"{
+            "name": "ipadic",
+            "encoding": "UTF-8",
+            "default_word_cost": -10000,
+            "default_left_context_id": 0,
+            "default_right_context_id": 0,
+            "default_field_value": "*",
+            "flexible_csv": true,
+            "skip_invalid_cost_or_id": false,
+            "normalize_details": true,
+            "dictionary_schema": {
+                "fields": [
+                    "surface", "left_context_id", "right_context_id", "cost",
+                    "part_of_speech", "part_of_speech_subcategory_1",
+                    "part_of_speech_subcategory_2", "part_of_speech_subcategory_3",
+                    "conjugation_form", "conjugation_type",
+                    "base_form", "reading", "pronunciation"
+                ]
+            },
+            "user_dictionary_schema": {
+                "fields": ["surface", "part_of_speech", "reading"]
+            }
+        }"#;
+        let metadata: Metadata = serde_json::from_str(metadata_json)
+            .expect("failed to parse IPADIC metadata for custom dict");
+        let builder = DictionaryBuilder::new(metadata);
+        builder.build_user_dictionary(custom_csv, &custom_bin)
+            .expect("failed to build custom user dictionary from custom_dict.csv");
+        eprintln!("custom_dict: compiled custom_dict.csv -> custom_dict.bin");
+    } else {
+        // Write an empty file so include_bytes! doesn't fail
+        fs::write(&custom_bin, &[]).expect("failed to write empty custom_dict.bin");
+        eprintln!("custom_dict: no custom_dict.csv found, writing empty bin");
+    }
 }
 
 fn acquire_json(url: &str, json_name: &str, expected_sha: Option<&str>, env_override: &str) -> PathBuf {

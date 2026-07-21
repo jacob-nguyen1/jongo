@@ -294,7 +294,17 @@ static PARSER: LazyLock<Parser> = LazyLock::new(|| Parser::new().unwrap());
 impl Parser {
     fn new() -> LinderaResult<Self> {
         let dictionary = load_dictionary("embedded://ipadic")?;
-        let segmenter = Segmenter::new(Mode::Normal, dictionary, None);
+        
+        // Load custom user dictionary compiled from custom_dict.csv at build time
+        let custom_dict_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/custom_dict.bin"));
+        let user_dict = if !custom_dict_bytes.is_empty() {
+            use lindera::dictionary::UserDictionary;
+            Some(UserDictionary::load(custom_dict_bytes).expect("failed to load custom_dict.bin"))
+        } else {
+            None
+        };
+        
+        let segmenter = Segmenter::new(Mode::Normal, dictionary, user_dict);
         let tokenizer = Tokenizer::new(segmenter);
         Ok(Self { tokenizer })
     }
