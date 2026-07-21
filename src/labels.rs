@@ -370,6 +370,7 @@ pub enum ParticleRole {
     Adverbial,        // に
     Scope,            // で
     Approximate,      // ぐらい
+    Definition,       // とは
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
 
@@ -395,6 +396,7 @@ impl ParticleRole {
             Self::Adverbial => "Adverbial",
             Self::Scope => "Scope",
             Self::Approximate => "Approximate",
+            Self::Definition => "Definition",
             Self::Ambiguous(_) => "Ambiguous",
         }
     }
@@ -420,6 +422,7 @@ impl ParticleRole {
             Self::Adverbial => "Turns the word into an adverb.",
             Self::Scope => "The scope or boundary of the action.",
             Self::Approximate => "An approximate amount or point.",
+            Self::Definition => "Defines or explains the preceding term.",
             Self::Ambiguous(_) => "Cannot be determined by rule-based parsing alone.",
         }
     }
@@ -447,6 +450,7 @@ impl ParticleRole {
             "Adverbial" => Some(Self::Adverbial),
             "Scope" => Some(Self::Scope),
             "Approximate" => Some(Self::Approximate),
+            "Definition" => Some(Self::Definition),
             _ => None,
         }
     }

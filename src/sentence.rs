@@ -156,7 +156,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
         }
 
         // Bracketed Quotation start: capture until CloseParenthesis
-        if current.pos == PartOfSpeech::Symbol && current.sub1 == PartOfSpeechSubcategory1::OpenParenthesis {
+        if current.pos == PartOfSpeech::Symbol && current.sub1 == PartOfSpeechSubcategory1::OpenParenthesis && (current.full == "「" || current.full == "『") {
             let mut inner_tokens = Vec::new();
             let mut j = i + 1;
             let mut found_close = false;
@@ -631,6 +631,12 @@ fn assign_particle_roles(chunks: &mut Vec<Chunk>) {
                         {
                             if nn_word.full == "は" || nn_word.full == "も" {
                                 chunk.secondary_particle = Some(nn_word.clone());
+                                
+                                // Special case for とは (Definition)
+                                if chunk.particle.as_ref().map(|p| p.full.as_str()) == Some("と") && nn_word.full == "は" {
+                                    chunk.particle_role = Some(ParticleRole::Definition);
+                                }
+                                
                                 iter.next();
                             }
                         }
@@ -775,6 +781,7 @@ mod tests {
             "早く家に帰って読みたいです」と話していました。",
             "静かな公園を1時間ぐらい歩きながら、友達が好きな料理を食べたのに、彼女は急に家を出て行った",
             "3時ごろに店へ行く。3時ころに帰る。1時間くらい待つ。",
+            "としまえんの水上設置遊具による溺水事故とは、2019年（令和元年）8月15日に東京都練馬区に当時あった遊園地「としまえん」のプールにある、エア遊具タイプの水上設置遊具を備えたアトラクション「ふわふわウォーターランド」において、ライフジャケットを着用した女児が遊具下に浮いているのが見つかり、その後溺死した事故である。",
         ];
 
         for text in cases {
