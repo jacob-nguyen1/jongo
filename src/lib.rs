@@ -296,8 +296,8 @@ impl JongoController {
                 return;
             };
             let cd = chunk_data_for_click.borrow();
-            if let Some((word, particle, role, selected_def)) = cd.get(idx) {
-                let detail_html = render_detail(word, particle.as_ref(), role.as_ref(), *selected_def);
+            if let Some((word, particle, secondary_particle, role, selected_def)) = cd.get(idx) {
+                let detail_html = render_detail(word, particle.as_ref(), secondary_particle.as_ref(), role.as_ref(), *selected_def);
                 detail_panel.set_inner_html(&detail_html);
             }
         });
@@ -539,7 +539,7 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                     if let Some(resolved_role) = ParticleRole::from_str(role_str) {
                         // Mutate the ChunkData to store the resolved role
                         if let Some(entry) = cd.get_mut(idx) {
-                            entry.2 = Some(resolved_role.clone());
+                            entry.3 = Some(resolved_role.clone());
                         }
                         
                         // Update the badge in the DOM
@@ -562,7 +562,7 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                 if let Some(def_idx) = dis.result.as_i64() {
                     // Mutate the ChunkData to store the selected definition
                     if let Some(entry) = cd.get_mut(idx) {
-                        entry.3 = Some(def_idx as usize);
+                        entry.4 = Some(def_idx as usize);
                     }
                     
                     // Trigger a click on the row to refresh the detail panel
@@ -581,7 +581,7 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
     }
 }
 
-type ChunkData = (ProcToken, Option<ProcToken>, Option<ParticleRole>, Option<usize>);
+type ChunkData = (ProcToken, Option<ProcToken>, Option<ProcToken>, Option<ParticleRole>, Option<usize>);
 
 fn render_structure(sentence: &Sentence, chunk_data: &mut Vec<ChunkData>) -> String {
     let mut html = String::from("<div class='jong-structure' style='position:relative'>");
@@ -612,7 +612,7 @@ fn render_clause(clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
     html.push_str(&render_chunk_group(&clause.predicate, "", "", chunk_data));
     if let Some(conn) = &clause.connective {
         let id = chunk_data.len();
-        chunk_data.push((conn.clone(), None, None, None));
+        chunk_data.push((conn.clone(), None, None, None, None));
         html.push_str(&format!(
             "<div class='jong-row' data-chunk-id='{id}' style='margin-top:6px;font-size:14px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
             conn.full
@@ -641,6 +641,7 @@ fn render_chunk_group(chunk: &Chunk, prefix: &str, branch: &str, chunk_data: &mu
     html.push_str(&render_row(
         &chunk.word,
         chunk.particle.as_ref(),
+        chunk.secondary_particle.as_ref(),
         chunk.particle_role.as_ref(),
         prefix,
         branch,
@@ -672,13 +673,14 @@ fn render_modifier(modifier: &Modifier, prefix: &str, branch: &str, chunk_data: 
 fn render_row(
     word: &ProcToken,
     particle: Option<&ProcToken>,
+    secondary_particle: Option<&ProcToken>,
     role: Option<&ParticleRole>,
     prefix: &str,
     branch: &str,
     chunk_data: &mut Vec<ChunkData>,
 ) -> String {
     let id = chunk_data.len();
-    chunk_data.push((word.clone(), particle.cloned(), role.cloned(), None));
+    chunk_data.push((word.clone(), particle.cloned(), secondary_particle.cloned(), role.cloned(), None));
 
     let (size, color, weight) = if prefix.is_empty() && branch.is_empty() {
         ("13px", "#000", "600")
@@ -695,6 +697,9 @@ fn render_row(
     if let Some(p) = particle {
         html.push_str(&format!(" <span style='color:{color}'>{}</span>", p.full));
     }
+    if let Some(sp) = secondary_particle {
+        html.push_str(&format!(" <span style='color:{color}'>{}</span>", sp.full));
+    }
     if let Some(r) = role {
         let is_ambig = matches!(r, ParticleRole::Ambiguous(_));
         let class = if is_ambig { "ambiguous-badge" } else { "resolved-badge" };
@@ -708,7 +713,7 @@ fn render_row(
     html
 }
 
-fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, role: Option<&ParticleRole>, selected_def: Option<usize>) -> String {
+fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, secondary_particle: Option<&ProcToken>, role: Option<&ParticleRole>, selected_def: Option<usize>) -> String {
     let mut html = String::from("<div style='font-size:12px;line-height:1.6'>");
 
     html.push_str(&format!(
@@ -824,6 +829,12 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, role: Option<&P
             None => {
                 html.push_str("<div style='color:#888'>Role: unknown</div>");
             }
+        }
+        if let Some(sp) = secondary_particle {
+            html.push_str(&format!(
+                "<div style='margin-top:4px'><span style='color:#888'>+ Topicalizer:</span> <strong>{}</strong></div>",
+                sp.full
+            ));
         }
         html.push_str("</div>");
     }
