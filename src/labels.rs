@@ -315,6 +315,43 @@ pub enum ClauseRelation {
 }
 
 impl ClauseRelation {
+    pub fn all() -> &'static [ClauseRelation] {
+        &[
+            Self::Reason,
+            Self::Contrast,
+            Self::Concessive,
+            Self::Conditional,
+            Self::Continuation,
+            Self::Sequence,
+            Self::Simultaneous,
+            Self::Temporal,
+            Self::Until,
+            Self::Main,
+            Self::Modifier,
+            Self::Quotation,
+            Self::Evidential,
+        ]
+    }
+
+    pub fn explanation(&self) -> &'static str {
+        match self {
+            Self::Reason => "Gives a reason or cause (から、ので).",
+            Self::Contrast => "Contrasts with the following clause (けど、が).",
+            Self::Concessive => "Unexpected outcome despite the clause (のに).",
+            Self::Conditional => "Sets a condition (ば、たら).",
+            Self::Continuation => "Continues into the next action (て).",
+            Self::Sequence => "One action after another (てから).",
+            Self::Simultaneous => "Two actions happening at once (ながら).",
+            Self::Temporal => "Indicates when something happens (時).",
+            Self::Until => "Marks an endpoint in time or space (まで).",
+            Self::Main => "The main / sentence-final clause.",
+            Self::Modifier => "A relative clause modifying a noun.",
+            Self::Quotation => "Quotes speech or thought (と).",
+            Self::Evidential => "Indicates source of information (によると).",
+            Self::Ambiguous(_) => "Cannot be determined by rule-based parsing alone.",
+        }
+    }
+
     pub fn color(&self) -> &'static str {
         match self {
             Self::Reason => "#a040a0",
@@ -375,6 +412,31 @@ pub enum ParticleRole {
 }
 
 impl ParticleRole {
+    pub fn all() -> &'static [ParticleRole] {
+        &[
+            Self::Subject,
+            Self::Object,
+            Self::Topic,
+            Self::IndirectObject,
+            Self::Destination,
+            Self::LocationAction,
+            Self::Means,
+            Self::Source,
+            Self::Limit,
+            Self::Also,
+            Self::ComparisonBase,
+            Self::Accompaniment,
+            Self::Listing,
+            Self::Temporal,
+            Self::Purpose,
+            Self::Agent,
+            Self::Adverbial,
+            Self::Scope,
+            Self::Approximate,
+            Self::Definition,
+        ]
+    }
+
     pub fn badge(&self) -> &'static str {
         match self {
             Self::Subject => "Subject",

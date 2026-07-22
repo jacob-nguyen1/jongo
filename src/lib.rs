@@ -11,11 +11,49 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::console;
 
-use crate::labels::{PartOfSpeechSubcategory1, ParticleRole};
+use crate::labels::{ClauseRelation, PartOfSpeechSubcategory1, ParticleRole};
 use crate::grammar::ProcToken;
 use crate::sentence::{Chunk, Clause, Modifier, Sentence};
 
 const SENTENCE_DELIMITERS: [u16; 4] = ['.' as u16, '。' as u16, '\n' as u16, '…' as u16];
+const MIN_WINDOW_WIDTH: f64 = 360.0;
+const MIN_WINDOW_HEIGHT: f64 = 200.0;
+const RESIZE_EDGE: f64 = 10.0;
+const BASE_Z_INDEX: u32 = 10_000;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResizeCorner {
+    Nw,
+    Ne,
+    Sw,
+    Se,
+}
+
+fn hit_resize_corner(el: &web_sys::HtmlElement, client_x: f64, client_y: f64) -> Option<ResizeCorner> {
+    let rect = el.get_bounding_client_rect();
+    let x = client_x - rect.left();
+    let y = client_y - rect.top();
+    let w = rect.width();
+    let h = rect.height();
+    let near_l = x <= RESIZE_EDGE;
+    let near_r = x >= w - RESIZE_EDGE;
+    let near_t = y <= RESIZE_EDGE;
+    let near_b = y >= h - RESIZE_EDGE;
+    match (near_l, near_r, near_t, near_b) {
+        (true, _, true, _) => Some(ResizeCorner::Nw),
+        (_, true, true, _) => Some(ResizeCorner::Ne),
+        (true, _, _, true) => Some(ResizeCorner::Sw),
+        (_, true, _, true) => Some(ResizeCorner::Se),
+        _ => None,
+    }
+}
+
+fn corner_cursor(corner: ResizeCorner) -> &'static str {
+    match corner {
+        ResizeCorner::Nw | ResizeCorner::Se => "nwse-resize",
+        ResizeCorner::Ne | ResizeCorner::Sw => "nesw-resize",
+    }
+}
 
 async fn fetch_llm(prompt: &str) -> JsValue {
     let global = js_sys::global();
@@ -50,6 +88,42 @@ async fn fetch_llm(prompt: &str) -> JsValue {
     }
 }
 
+fn persist_dark_mode(on: bool) {
+    let global = js_sys::global();
+    let Ok(func_val) = js_sys::Reflect::get(&global, &JsValue::from_str("__jongo_set_dark_mode")) else {
+        return;
+    };
+    let Ok(func) = func_val.dyn_into::<js_sys::Function>() else {
+        return;
+    };
+    let _ = func.call1(&JsValue::NULL, &JsValue::from_bool(on));
+}
+
+fn apply_theme(el: &web_sys::HtmlElement, dark: bool) {
+    if dark {
+        let _ = el.set_attribute("data-jong-dark", "1");
+        let _ = el.style().set_property("filter", "invert(1) hue-rotate(180deg)");
+    } else {
+        let _ = el.remove_attribute("data-jong-dark");
+        let _ = el.style().remove_property("filter");
+    }
+}
+
+fn html_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 thread_local! {
     static CONTROLLER: RefCell<JongoController> = RefCell::new(JongoController::new());
 }
@@ -76,9 +150,11 @@ struct JongoController {
     mouse_x: f32,
     mouse_y: f32,
     enabled: bool,
+    dark_mode: bool,
     prompt: Option<web_sys::HtmlElement>,
     analyses: Vec<AnalysisWindow>,
     next_id: u32,
+    next_z: u32,
 }
 
 impl JongoController {
@@ -87,10 +163,31 @@ impl JongoController {
             mouse_x: 0.0,
             mouse_y: 0.0,
             enabled: true,
+            dark_mode: false,
             prompt: None,
             analyses: Vec::new(),
             next_id: 0,
+            next_z: BASE_Z_INDEX,
         }
+    }
+
+    fn bring_to_front(&mut self, el: &web_sys::HtmlElement) {
+        self.next_z += 1;
+        let _ = el.style().set_property("z-index", &self.next_z.to_string());
+    }
+
+    fn apply_dark_mode_all(&self) {
+        if let Some(prompt) = &self.prompt {
+            apply_theme(prompt, self.dark_mode);
+        }
+        for a in &self.analyses {
+            apply_theme(&a.element, self.dark_mode);
+        }
+    }
+
+    fn set_dark_mode(&mut self, on: bool) {
+        self.dark_mode = on;
+        self.apply_dark_mode_all();
     }
 
     fn disable(&mut self) {
@@ -182,6 +279,7 @@ impl JongoController {
         element.style().set_property("color", "black").unwrap();
 
         element.set_inner_html("<button style='all:revert'>jong</button>");
+        apply_theme(&element, self.dark_mode);
 
         // delete old prompt
         if let Some(old) = self.prompt.take() {
@@ -243,128 +341,314 @@ impl JongoController {
         let tokens = grammar::analyze_sentence(sentence);
         let mut chunk_data: Vec<ChunkData> = Vec::new();
         let left = crate::sentence::build_sentence(tokens)
-            .map(|s| render_structure(&s, &mut chunk_data))
+            .map(|s| render_structure(&s, sentence, &mut chunk_data))
             .unwrap_or_else(|| "<div>could not parse</div>".to_string());
 
         let chunk_data_rc = Rc::new(RefCell::new(chunk_data));
+
+        let analysis_body = format!(
+            "<div class='jong-structure-scroll'><div class='jong-structure-inner'>{left}</div></div>\
+             <div class='jong-detail' style='flex:1;min-width:0;overflow-y:auto;border-left:1px solid #ddd;padding-left:12px'>\
+               <div style='color:#888;font-size:12px'>Click a word on the left to see details</div>\
+             </div>"
+        );
+        let analysis_body_rc = Rc::new(analysis_body.clone());
 
         let html = format!(
             "<style>\
              .jong-row{{cursor:pointer;border-radius:3px}}\
              .jong-row:hover{{background:#eef2f7}}\
              .jong-drag-handle{{cursor:move;padding:6px 28px 6px 10px;background:#f0f0f0;border-bottom:1px solid #ddd;font-size:11px;color:#666;user-select:none;flex-shrink:0}}\
-             .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box}}\
+             .jong-header-btn{{position:absolute;top:4px;background:#eee;color:#333;border:1px solid #ccc;border-radius:3px;cursor:pointer;padding:1px 6px;z-index:1;font-size:12px;line-height:1.4}}\
+             .jong-header-btn:hover{{background:#ddd}}\
+             .jong-close{{right:4px;background:red;color:white;border:none}}\
+             .jong-settings{{right:30px}}\
+             .jong-legend{{right:56px}}\
+             .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box;overflow:hidden}}\
              .jong-structure-scroll{{direction:rtl;overflow-y:auto;flex:1;min-width:0;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8;margin:0;user-select:none}}\
              .jong-structure-scroll::-webkit-scrollbar{{width:5px}}\
              .jong-structure-scroll::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
              .jong-structure-scroll::-webkit-scrollbar-track{{background:#e8e8e8}}\
              .jong-structure-inner{{direction:ltr;padding:0 8px 0 6px}}\
+             .jong-panel{{flex:1;min-width:0;min-height:0;overflow-y:auto;padding:4px 12px 12px;font-size:12px;line-height:1.5;box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8}}\
+             .jong-panel::-webkit-scrollbar{{width:5px}}\
+             .jong-panel::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
+             .jong-panel::-webkit-scrollbar-track{{background:#e8e8e8}}\
+             .jong-panel-section{{margin-top:14px}}\
+             .jong-panel-section h3{{font-size:13px;margin:0 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}}\
+             .jong-legend-row{{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}}\
+             .jong-legend-badge{{flex-shrink:0;min-width:110px;font-size:10px;border:1px solid #ccc;border-radius:3px;padding:1px 6px;color:#444}}\
+             .jong-settings-row{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#f5f5f5;border-radius:8px}}\
+             .jong-switch{{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}}\
+             .jong-switch input{{opacity:0;width:0;height:0}}\
+             .jong-slider{{position:absolute;inset:0;background:#ccc;border-radius:24px;cursor:pointer;transition:background 0.2s}}\
+             .jong-slider::before{{content:\"\";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform 0.2s}}\
+             .jong-switch input:checked + .jong-slider{{background:#4a9}}\
+             .jong-switch input:checked + .jong-slider::before{{transform:translateX(20px)}}\
+             .jong-back{{background:none;border:none;color:#4a9;cursor:pointer;font-size:12px;padding:0;margin-bottom:10px}}\
              </style>\
              <div class='jong-drag-handle' style='height:8px'></div>\
-             <button class='jong-close' style='position:absolute;top:4px;right:4px;background:red;color:white;border:none;cursor:pointer;padding:2px 6px;z-index:1'>✕</button>\
-             <div class='jong-body'>\
-               <div class='jong-structure-scroll'><div class='jong-structure-inner'>{left}</div></div>\
-               <div class='jong-detail' style='flex:1;min-width:0;overflow-y:auto;border-left:1px solid #ddd;padding-left:12px'>\
-                 <div style='color:#888;font-size:12px'>Click a word on the left to see details</div>\
-               </div>\
-             </div>"
+             <button class='jong-header-btn jong-legend' title='Legend'>?</button>\
+             <button class='jong-header-btn jong-settings' title='Settings'>⚙</button>\
+             <button class='jong-header-btn jong-close' title='Close'>✕</button>\
+             <div class='jong-body'>{analysis_body}</div>"
         );
         element.set_inner_html(&html);
         element.style().set_property("display", "flex").unwrap();
         element.style().set_property("flex-direction", "column").unwrap();
         element.style().set_property("padding", "0").unwrap();
+        self.bring_to_front(&element);
+        apply_theme(&element, self.dark_mode);
 
-        // stop clicks inside from dismissing the prompt
-        let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+        // stop clicks inside from dismissing the prompt + bring to front
+        let bring_el = element.clone();
+        let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
             e.stop_propagation();
+            CONTROLLER.with(|c| {
+                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    ctrl.bring_to_front(&bring_el);
+                }
+            });
         });
-        element.add_event_listener_with_callback("click", stop_prop.as_ref().unchecked_ref()).unwrap();
+        element.add_event_listener_with_callback("mousedown", stop_prop.as_ref().unchecked_ref()).unwrap();
         stop_prop.forget();
 
-        // delegated click: chunk row -> detail panel
-        let detail_panel = element.query_selector(".jong-detail").unwrap().unwrap();
-        let chunk_data_for_click = chunk_data_rc.clone();
-        
-        let detail_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
-            let Some(target) = e.target() else { return };
-            let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
-            let Ok(Some(row)) = el.closest("[data-chunk-id]") else { return };
-            let Some(idx) = row
-                .get_attribute("data-chunk-id")
-                .and_then(|s| s.parse::<usize>().ok())
-            else {
-                return;
-            };
-            let cd = chunk_data_for_click.borrow();
-            if let Some((word, particle, secondary_particle, role, selected_def)) = cd.get(idx) {
-                let detail_html = render_detail(word, particle.as_ref(), secondary_particle.as_ref(), role.as_ref(), *selected_def);
-                detail_panel.set_inner_html(&detail_html);
-            }
+        let stop_click = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+            e.stop_propagation();
         });
+        element.add_event_listener_with_callback("click", stop_click.as_ref().unchecked_ref()).unwrap();
+        stop_click.forget();
+
+        // delegated click: chunk row -> detail panel
+        let detail_cb = {
+            let container = element.clone();
+            let chunk_data_for_click = chunk_data_rc.clone();
+            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+                let Some(target) = e.target() else { return };
+                let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
+                let Ok(Some(row)) = el.closest("[data-chunk-id]") else { return };
+                let Some(idx) = row
+                    .get_attribute("data-chunk-id")
+                    .and_then(|s| s.parse::<usize>().ok())
+                else {
+                    return;
+                };
+                let Ok(Some(detail_panel)) = container.query_selector(".jong-detail") else { return };
+                let cd = chunk_data_for_click.borrow();
+                if let Some((word, particle, secondary_particle, role, selected_def)) = cd.get(idx) {
+                    let detail_html = render_detail(word, particle.as_ref(), secondary_particle.as_ref(), role.as_ref(), *selected_def);
+                    detail_panel.set_inner_html(&detail_html);
+                }
+            })
+        };
         element.add_event_listener_with_callback("click", detail_cb.as_ref().unchecked_ref()).unwrap();
         detail_cb.forget();
 
-        // AI button click handler
-        if let Some(ai_btn) = element.query_selector(".refine-ai-btn").unwrap() {
-            if let Some(ast) = crate::sentence::build_sentence(grammar::analyze_sentence(sentence)) {
-                let sentence_str = sentence.to_string();
-                let context_str = context.to_string();
-                let prompt = crate::llm::generate_prompt(&ast, &sentence_str, &context_str);
-                let container = element.clone();
-                let chunk_data_for_ai = chunk_data_rc.clone();
-                
-                let ai_cb = Closure::<dyn FnMut()>::new(move || {
-                    let prompt = prompt.clone();
-                    let container = container.clone();
-                    let chunk_data_for_ai = chunk_data_for_ai.clone();
-                    
-                    wasm_bindgen_futures::spawn_local(async move {
-                        if let Some(btn) = container.query_selector(".refine-ai-btn").unwrap() {
-                            let btn_html = btn.dyn_into::<web_sys::HtmlElement>().unwrap();
-                            btn_html.set_inner_text("Loading...");
-                            btn_html.style().set_property("pointer-events", "none").unwrap();
-                            btn_html.style().set_property("opacity", "0.5").unwrap();
-                            
-                            let res = fetch_llm(&prompt).await;
-                            if let Some(res_str) = res.as_string() {
-                                // Strip markdown code fences if the LLM added them
-                                let json_str = strip_code_fences(&res_str);
-                                console::log_1(&format!("LLM response: {}", json_str).into());
-                                match serde_json::from_str::<crate::llm::LlmResponse>(&json_str) {
-                                    Ok(parsed) => {
-                                        apply_llm_results(&container, parsed, &chunk_data_for_ai);
-                                        btn_html.set_inner_text("Disambiguated");
-                                    }
-                                    Err(e) => {
-                                        console::error_1(&format!("JSON parse error: {}", e).into());
-                                        btn_html.set_inner_text("JSON Error");
-                                    }
-                                }
-                            } else {
-                                btn_html.set_inner_text("Setup Key in Popup");
+        // AI button via delegation (survives panel swap / restore)
+        if let Some(ast) = crate::sentence::build_sentence(grammar::analyze_sentence(sentence)) {
+            let sentence_str = sentence.to_string();
+            let context_str = context.to_string();
+            let prompt = crate::llm::generate_prompt(&ast, &sentence_str, &context_str);
+            let container = element.clone();
+            let chunk_data_for_ai = chunk_data_rc.clone();
+
+            let ai_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+                let Some(target) = e.target() else { return };
+                let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
+                let Ok(Some(btn)) = el.closest(".refine-ai-btn") else { return };
+
+                let prompt = prompt.clone();
+                let container = container.clone();
+                let chunk_data_for_ai = chunk_data_for_ai.clone();
+                let btn_html = btn.dyn_into::<web_sys::HtmlElement>().unwrap();
+
+                wasm_bindgen_futures::spawn_local(async move {
+                    btn_html.set_inner_text("Loading...");
+                    btn_html.style().set_property("pointer-events", "none").unwrap();
+                    btn_html.style().set_property("opacity", "0.5").unwrap();
+
+                    let res = fetch_llm(&prompt).await;
+                    if let Some(res_str) = res.as_string() {
+                        let json_str = strip_code_fences(&res_str);
+                        console::log_1(&format!("LLM response: {}", json_str).into());
+                        match serde_json::from_str::<crate::llm::LlmResponse>(&json_str) {
+                            Ok(parsed) => {
+                                apply_llm_results(&container, parsed, &chunk_data_for_ai);
+                                btn_html.set_inner_text("Disambiguated");
+                            }
+                            Err(e) => {
+                                console::error_1(&format!("JSON parse error: {}", e).into());
+                                btn_html.set_inner_text("JSON Error");
+                            }
+                        }
+                    } else {
+                        btn_html.set_inner_text("Setup Key in Popup");
+                    }
+                });
+            });
+            element.add_event_listener_with_callback("click", ai_cb.as_ref().unchecked_ref()).unwrap();
+            ai_cb.forget();
+        }
+
+        // Panel swap: restore analysis body + wire Back on panels
+        let wire_back_button = {
+            let element_for_back = element.clone();
+            let analysis_body_rc = analysis_body_rc.clone();
+            Rc::new(move |body: web_sys::Element| {
+                if let Ok(Some(back)) = body.query_selector(".jong-back") {
+                    let element_for_back = element_for_back.clone();
+                    let analysis_body_rc = analysis_body_rc.clone();
+                    let back_cb = Closure::<dyn FnMut()>::new(move || {
+                        if let Ok(Some(body)) = element_for_back.query_selector(".jong-body") {
+                            body.set_inner_html(&analysis_body_rc);
+                            if let Ok(html_body) = body.dyn_into::<web_sys::HtmlElement>() {
+                                let _ = html_body.style().set_property("display", "flex");
+                                let _ = html_body.style().set_property("flex-direction", "row");
+                                let _ = html_body.style().set_property("overflow", "hidden");
                             }
                         }
                     });
-                });
-                ai_btn.add_event_listener_with_callback("click", ai_cb.as_ref().unchecked_ref()).unwrap();
-                ai_cb.forget();
-            }
+                    back.add_event_listener_with_callback("click", back_cb.as_ref().unchecked_ref()).unwrap();
+                    back_cb.forget();
+                }
+            })
+        };
+
+        // Settings button
+        if let Ok(Some(settings_btn)) = element.query_selector(".jong-settings") {
+            let element_settings = element.clone();
+            let wire_back = wire_back_button.clone();
+            let settings_cb = Closure::<dyn FnMut()>::new(move || {
+                let dark = CONTROLLER.with(|c| c.borrow().dark_mode);
+                if let Ok(Some(body)) = element_settings.query_selector(".jong-body") {
+                    body.set_inner_html(&render_settings_panel(dark));
+                    if let Ok(html_body) = body.clone().dyn_into::<web_sys::HtmlElement>() {
+                        let _ = html_body.style().set_property("display", "flex");
+                        let _ = html_body.style().set_property("flex-direction", "column");
+                        let _ = html_body.style().set_property("overflow", "hidden");
+                    }
+                    wire_back(body.clone());
+
+                    if let Ok(Some(toggle)) = body.query_selector("#jong-dark-toggle") {
+                        let toggle_cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |e: web_sys::Event| {
+                            let Some(target) = e.target() else { return };
+                            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
+                            let on = input.checked();
+                            CONTROLLER.with(|c| {
+                                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                                    ctrl.set_dark_mode(on);
+                                }
+                            });
+                            persist_dark_mode(on);
+                        });
+                        toggle.add_event_listener_with_callback("change", toggle_cb.as_ref().unchecked_ref()).unwrap();
+                        toggle_cb.forget();
+                    }
+                }
+            });
+            settings_btn.add_event_listener_with_callback("click", settings_cb.as_ref().unchecked_ref()).unwrap();
+            settings_cb.forget();
         }
 
-        // drag handle
+        // Legend button
+        if let Ok(Some(legend_btn)) = element.query_selector(".jong-legend") {
+            let element_legend = element.clone();
+            let wire_back = wire_back_button.clone();
+            let legend_cb = Closure::<dyn FnMut()>::new(move || {
+                if let Ok(Some(body)) = element_legend.query_selector(".jong-body") {
+                    body.set_inner_html(&render_legend_panel());
+                    if let Ok(html_body) = body.clone().dyn_into::<web_sys::HtmlElement>() {
+                        let _ = html_body.style().set_property("display", "flex");
+                        let _ = html_body.style().set_property("flex-direction", "column");
+                        let _ = html_body.style().set_property("overflow", "hidden");
+                    }
+                    wire_back(body);
+                }
+            });
+            legend_btn.add_event_listener_with_callback("click", legend_cb.as_ref().unchecked_ref()).unwrap();
+            legend_cb.forget();
+        }
+
+        // drag + corner resize (no visible handles)
         let dragging = Rc::new(RefCell::new(false));
+        let resizing = Rc::new(RefCell::new(Option::<ResizeCorner>::None));
         let drag_offset_x = Rc::new(RefCell::new(0.0_f64));
         let drag_offset_y = Rc::new(RefCell::new(0.0_f64));
+        // start_cx, start_cy, start_left, start_top, start_w, start_h (left/top in document coords)
+        let resize_start = Rc::new(RefCell::new((0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64)));
         let element_drag = element.clone();
         let window_drag = window.clone();
 
+        // Corner cursor feedback while hovering
+        {
+            let el = element.clone();
+            let resizing_ref = Rc::clone(&resizing);
+            let dragging_ref = Rc::clone(&dragging);
+            let cursor_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+                if resizing_ref.borrow().is_some() || *dragging_ref.borrow() {
+                    return;
+                }
+                if let Some(corner) = hit_resize_corner(&el, e.client_x() as f64, e.client_y() as f64) {
+                    let _ = el.style().set_property("cursor", corner_cursor(corner));
+                } else {
+                    let _ = el.style().set_property("cursor", "default");
+                }
+            });
+            element
+                .add_event_listener_with_callback("mousemove", cursor_cb.as_ref().unchecked_ref())
+                .unwrap();
+            cursor_cb.forget();
+        }
+
+        // mousedown on window: start corner resize if near a corner
+        {
+            let resizing_down = Rc::clone(&resizing);
+            let dragging_down = Rc::clone(&dragging);
+            let resize_start_down = Rc::clone(&resize_start);
+            let element_down = element.clone();
+            let window_down = window.clone();
+
+            let resize_mousedown = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+                let Some(corner) = hit_resize_corner(&element_down, e.client_x() as f64, e.client_y() as f64) else {
+                    return;
+                };
+                *dragging_down.borrow_mut() = false;
+                *resizing_down.borrow_mut() = Some(corner);
+                let rect = element_down.get_bounding_client_rect();
+                let scroll_x = window_down.scroll_x().unwrap_or(0.0);
+                let scroll_y = window_down.scroll_y().unwrap_or(0.0);
+                *resize_start_down.borrow_mut() = (
+                    e.client_x() as f64,
+                    e.client_y() as f64,
+                    rect.left() + scroll_x,
+                    rect.top() + scroll_y,
+                    rect.width(),
+                    rect.height(),
+                );
+                let _ = element_down.style().set_property("cursor", corner_cursor(corner));
+                e.prevent_default();
+            });
+            element
+                .add_event_listener_with_callback("mousedown", resize_mousedown.as_ref().unchecked_ref())
+                .unwrap();
+            resize_mousedown.forget();
+        }
+
         if let Ok(Some(handle)) = element.query_selector(".jong-drag-handle") {
             let dragging_down = Rc::clone(&dragging);
+            let resizing_down = Rc::clone(&resizing);
             let offset_x_down = Rc::clone(&drag_offset_x);
             let offset_y_down = Rc::clone(&drag_offset_y);
             let element_down = element.clone();
 
             let drag_start = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+                if resizing_down.borrow().is_some() {
+                    return;
+                }
+                // Prefer corner resize over drag when near a corner of the handle
+                if hit_resize_corner(&element_down, e.client_x() as f64, e.client_y() as f64).is_some() {
+                    return;
+                }
                 let rect = element_down.get_bounding_client_rect();
                 *dragging_down.borrow_mut() = true;
                 *offset_x_down.borrow_mut() = e.client_x() as f64 - rect.left();
@@ -378,9 +662,56 @@ impl JongoController {
         }
 
         let dragging_move = Rc::clone(&dragging);
+        let resizing_move = Rc::clone(&resizing);
         let offset_x_move = Rc::clone(&drag_offset_x);
         let offset_y_move = Rc::clone(&drag_offset_y);
+        let resize_start_move = Rc::clone(&resize_start);
         let drag_move = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+            if let Some(corner) = *resizing_move.borrow() {
+                let (start_cx, start_cy, start_left, start_top, start_w, start_h) = *resize_start_move.borrow();
+                let dx = e.client_x() as f64 - start_cx;
+                let dy = e.client_y() as f64 - start_cy;
+                let fixed_right = start_left + start_w;
+                let fixed_bottom = start_top + start_h;
+
+                let (new_left, new_top, new_w, new_h) = match corner {
+                    ResizeCorner::Se => (
+                        start_left,
+                        start_top,
+                        (start_w + dx).max(MIN_WINDOW_WIDTH),
+                        (start_h + dy).max(MIN_WINDOW_HEIGHT),
+                    ),
+                    ResizeCorner::Sw => {
+                        let new_w = (start_w - dx).max(MIN_WINDOW_WIDTH);
+                        (
+                            fixed_right - new_w,
+                            start_top,
+                            new_w,
+                            (start_h + dy).max(MIN_WINDOW_HEIGHT),
+                        )
+                    }
+                    ResizeCorner::Ne => {
+                        let new_h = (start_h - dy).max(MIN_WINDOW_HEIGHT);
+                        (
+                            start_left,
+                            fixed_bottom - new_h,
+                            (start_w + dx).max(MIN_WINDOW_WIDTH),
+                            new_h,
+                        )
+                    }
+                    ResizeCorner::Nw => {
+                        let new_w = (start_w - dx).max(MIN_WINDOW_WIDTH);
+                        let new_h = (start_h - dy).max(MIN_WINDOW_HEIGHT);
+                        (fixed_right - new_w, fixed_bottom - new_h, new_w, new_h)
+                    }
+                };
+
+                element_drag.style().set_property("left", &format!("{new_left}px")).unwrap();
+                element_drag.style().set_property("top", &format!("{new_top}px")).unwrap();
+                element_drag.style().set_property("width", &format!("{new_w}px")).unwrap();
+                element_drag.style().set_property("height", &format!("{new_h}px")).unwrap();
+                return;
+            }
             if !*dragging_move.borrow() {
                 return;
             }
@@ -396,8 +727,12 @@ impl JongoController {
             .unwrap();
 
         let dragging_up = Rc::clone(&dragging);
+        let resizing_up = Rc::clone(&resizing);
+        let element_up = element.clone();
         let drag_end = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |_e: web_sys::MouseEvent| {
             *dragging_up.borrow_mut() = false;
+            *resizing_up.borrow_mut() = None;
+            let _ = element_up.style().set_property("cursor", "default");
         });
         window
             .add_event_listener_with_callback("mouseup", drag_end.as_ref().unchecked_ref())
@@ -502,6 +837,15 @@ pub fn set_enabled(on: bool) {
     });
 }
 
+#[wasm_bindgen]
+pub fn set_dark_mode(on: bool) {
+    CONTROLLER.with(|c| {
+        if let Ok(mut ctrl) = c.try_borrow_mut() {
+            ctrl.set_dark_mode(on);
+        }
+    });
+}
+
 fn strip_code_fences(s: &str) -> String {
     let trimmed = s.trim();
     // Strip ```json ... ``` or ``` ... ```
@@ -583,22 +927,104 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
 
 type ChunkData = (ProcToken, Option<ProcToken>, Option<ProcToken>, Option<ParticleRole>, Option<usize>);
 
-fn render_structure(sentence: &Sentence, chunk_data: &mut Vec<ChunkData>) -> String {
+fn render_structure(sentence: &Sentence, sentence_str: &str, chunk_data: &mut Vec<ChunkData>) -> String {
     let mut html = String::from("<div class='jong-structure' style='position:relative'>");
     
-    html.push_str(
-        "<div style='text-align:right;margin-bottom:8px'>\
+    let escaped = html_escape(sentence_str);
+    html.push_str(&format!(
+        "<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px'>\
+         <div style='font-size:13px;font-weight:600;line-height:1.4;flex:1;min-width:0;word-break:break-word'>{escaped}</div>\
          <button class='refine-ai-btn' style='\
             background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 8px; \
-            font-size:11px; cursor:pointer; color:#333; font-weight:500;'>\
+            font-size:11px; cursor:pointer; color:#333; font-weight:500;flex-shrink:0;'>\
             Disambiguate\
          </button></div>"
-    );
+    ));
 
     for clause in &sentence.clauses {
         html.push_str(&render_clause(clause, chunk_data));
     }
     html.push_str("</div>");
+    html
+}
+
+fn render_settings_panel(dark_mode: bool) -> String {
+    let checked = if dark_mode { " checked" } else { "" };
+    format!(
+        "<div class='jong-panel'>\
+           <button class='jong-back'>← Back</button>\
+           <div style='font-size:14px;font-weight:600;margin-bottom:12px'>Settings</div>\
+           <div class='jong-settings-row'>\
+             <div>\
+               <div style='font-weight:500'>Dark mode</div>\
+               <div style='font-size:11px;color:#666;margin-top:2px'>Applies to Jongo windows only</div>\
+             </div>\
+             <label class='jong-switch' title='Toggle dark mode'>\
+               <input type='checkbox' id='jong-dark-toggle'{checked} />\
+               <span class='jong-slider'></span>\
+             </label>\
+           </div>\
+         </div>"
+    )
+}
+
+fn render_legend_panel() -> String {
+    let mut html = String::from(
+        "<div class='jong-panel'>\
+           <button class='jong-back'>← Back</button>\
+           <div style='font-size:14px;font-weight:600;margin-bottom:4px'>Legend</div>\
+           <div style='font-size:11px;color:#666;margin-bottom:8px'>Reference for labels used in analysis</div>"
+    );
+
+    html.push_str("<div class='jong-panel-section'><h3>Particle roles</h3>");
+    for role in ParticleRole::all() {
+        html.push_str(&format!(
+            "<div class='jong-legend-row'>\
+               <span class='jong-legend-badge'>{}</span>\
+               <span>{}</span>\
+             </div>",
+            role.badge(),
+            role.explanation()
+        ));
+    }
+    html.push_str("</div>");
+
+    html.push_str("<div class='jong-panel-section'><h3>Clause relations</h3>");
+    for rel in ClauseRelation::all() {
+        html.push_str(&format!(
+            "<div class='jong-legend-row'>\
+               <span class='jong-legend-badge' style='border-color:{color};color:{color}'>{label}</span>\
+               <span>{explanation}</span>\
+             </div>",
+            color = rel.color(),
+            label = rel.label(),
+            explanation = rel.explanation()
+        ));
+    }
+    html.push_str("</div>");
+
+    html.push_str("<div class='jong-panel-section'><h3>Verb conjugations</h3>");
+    const CONJUGATIONS: &[(&str, &str)] = &[
+        ("Negative", "Negates the action or state (〜ない)."),
+        ("Past", "Marks completed or past tense (〜た / 〜だ)."),
+        ("Continuous", "Ongoing or resulting state (〜ている)."),
+        ("Te-form", "Connective form used for sequences and requests (〜て)."),
+        ("Desiderative", "Expresses desire to do something (〜たい)."),
+        ("Volitional", "Expresses intention or suggestion (〜よう / 〜う)."),
+        ("Potential", "Ability or possibility (〜られる / できる)."),
+        ("Causative", "Making or letting someone do something (〜させる)."),
+        ("Conditional", "If / when condition (〜ば / 〜たら)."),
+        ("Negative-imperative", "Command not to do something (〜な)."),
+    ];
+    for (label, explanation) in CONJUGATIONS {
+        html.push_str(&format!(
+            "<div class='jong-legend-row'>\
+               <span class='jong-legend-badge'>{label}</span>\
+               <span>{explanation}</span>\
+             </div>"
+        ));
+    }
+    html.push_str("</div></div>");
     html
 }
 
