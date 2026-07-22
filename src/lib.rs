@@ -365,18 +365,18 @@ impl JongoController {
 
         let chunk_data_rc = Rc::new(RefCell::new(chunk_data));
 
+        let all_details = render_all_details(&chunk_data_rc.borrow());
         let analysis_body = format!(
             "<div class='jong-structure-scroll'><div class='jong-structure-inner'>{left}</div></div>\
-             <div class='jong-detail'>\
-               <div class='jong-muted' style='font-size:12px'>Click a word on the left to see details</div>\
-             </div>"
+             <div class='jong-detail'>{all_details}</div>"
         );
         let analysis_body_rc = Rc::new(analysis_body.clone());
 
         let html = format!(
             "<style>\
-             .jong-row{{cursor:pointer;border-radius:3px}}\
+             .jong-row{{cursor:pointer;border-radius:3px;white-space:nowrap}}\
              .jong-row:hover{{background:#eef2f7}}\
+             .jong-row-selected{{background:#dbeafe}}\
              .jong-top-bar{{display:flex;align-items:stretch;background:#f5f5f5;border-bottom:1px solid #e0e0e0;flex-shrink:0;height:32px}}\
              .jong-drag-handle{{flex:1;cursor:move;display:flex;align-items:center;padding:0 12px;user-select:none}}\
              .jong-legend{{background:#fefce8;color:#ca8a04;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
@@ -386,12 +386,12 @@ impl JongoController {
              .jong-close{{background:#fef2f2;color:#ef4444;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
              .jong-close:hover{{background:#fee2e2;color:#dc2626}}\
              .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box;overflow:hidden}}\
-             .jong-structure-scroll{{direction:rtl;overflow-y:auto;flex:1;min-width:0;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8;margin:0;user-select:none}}\
-             .jong-structure-scroll::-webkit-scrollbar{{width:5px}}\
+             .jong-structure-scroll{{direction:rtl;overflow-y:auto;overflow-x:hidden;flex:1;min-width:0;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8;margin:0;user-select:none}}\
+             .jong-structure-scroll::-webkit-scrollbar{{width:5px;height:5px}}\
              .jong-structure-scroll::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
              .jong-structure-scroll::-webkit-scrollbar-track{{background:#e8e8e8}}\
              .jong-structure-inner{{direction:ltr;padding:0 8px 0 6px}}\
-             .jong-detail{{flex:1;min-width:0;overflow-y:auto;border-left:1px solid #ddd;padding-left:12px}}\
+             .jong-detail{{flex:1;min-width:0;overflow-y:auto;border-left:1px solid #ddd;padding-left:12px;position:relative}}\
              .jong-muted{{color:#444}}\
              .jong-hint{{color:#555;font-size:11px}}\
              .jong-word-head{{font-weight:600;color:#111}}\
@@ -404,6 +404,13 @@ impl JongoController {
              .jong-def-box{{max-height:150px;overflow-y:auto;background:#fafafa;border:1px solid #eee;border-radius:4px;padding:8px 8px 8px 24px;margin-top:2px}}\
              .jong-def-box ol{{margin:0;padding:0;color:#333}}\
              .jong-detail-section{{border-top:1px solid #eee}}\
+             .jong-accordion{{border:1px solid #e0e0e0;border-radius:6px;margin-bottom:6px;overflow:hidden}}\
+             .jong-accordion summary{{cursor:pointer;padding:6px 10px;font-size:13px;font-weight:600;background:#f8f9fa;list-style:none;display:flex;align-items:center;gap:6px;user-select:none}}\
+             .jong-accordion summary::-webkit-details-marker{{display:none}}\
+             .jong-accordion summary::before{{content:'▶';font-size:9px;transition:transform 0.15s;display:inline-block}}\
+             .jong-accordion[open] summary::before{{transform:rotate(90deg)}}\
+             .jong-accordion-body{{padding:6px 10px;font-size:12px;line-height:1.6}}\
+             .jong-accordion-highlight{{border-color:#3b82f6;box-shadow:0 0 0 1px #3b82f6}}\
              .jong-panel{{flex:1;min-width:0;min-height:0;overflow-y:auto;padding:4px 12px 12px;font-size:12px;line-height:1.5;box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8}}\
              .jong-panel::-webkit-scrollbar{{width:5px}}\
              .jong-panel::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
@@ -421,6 +428,7 @@ impl JongoController {
              .jong-switch input:checked + .jong-slider::before{{transform:translateX(20px)}}\
              .jong-back{{background:none;border:none;color:#4a9;cursor:pointer;font-size:12px;padding:0;margin-bottom:10px}}\
              [data-jong-dark=\"1\"] .jong-row:hover{{background:#4a4a4a}}\
+             [data-jong-dark=\"1\"] .jong-row-selected{{background:#334155}}\
              [data-jong-dark=\"1\"] .jong-top-bar{{background:#2d2d2d;border-bottom-color:#444}}\
              [data-jong-dark=\"1\"] .jong-drag-handle{{color:#bbb}}\
              [data-jong-dark=\"1\"] .jong-legend{{background:#3b2d12;color:#facc15;border-left-color:#444}}\
@@ -440,6 +448,9 @@ impl JongoController {
              [data-jong-dark=\"1\"] .jong-def-box{{background:#333;border-color:#555}}\
              [data-jong-dark=\"1\"] .jong-def-box ol{{color:#e0e0e0}}\
              [data-jong-dark=\"1\"] .jong-detail-section{{border-top-color:#555}}\
+             [data-jong-dark=\"1\"] .jong-accordion{{border-color:#555}}\
+             [data-jong-dark=\"1\"] .jong-accordion summary{{background:#3a3a3a;color:#e0e0e0}}\
+             [data-jong-dark=\"1\"] .jong-accordion-highlight{{border-color:#60a5fa;box-shadow:0 0 0 1px #60a5fa}}\
              [data-jong-dark=\"1\"] .jong-structure-scroll{{scrollbar-color:#888 #333}}\
              [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-thumb{{background:#888}}\
              [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-track{{background:#333}}\
@@ -493,10 +504,11 @@ impl JongoController {
         element.add_event_listener_with_callback("click", stop_click.as_ref().unchecked_ref()).unwrap();
         stop_click.forget();
 
-        // delegated click: chunk row -> detail panel
+        // delegated click: chunk row -> detail panel (with toggle deselect)
         let detail_cb = {
             let container = element.clone();
             let chunk_data_for_click = chunk_data_rc.clone();
+            let selected_id: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(None));
             Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
                 let Some(target) = e.target() else { return };
                 let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
@@ -508,10 +520,57 @@ impl JongoController {
                     return;
                 };
                 let Ok(Some(detail_panel)) = container.query_selector(".jong-detail") else { return };
-                let cd = chunk_data_for_click.borrow();
-                if let Some((word, particle, secondary_particle, role, selected_def)) = cd.get(idx) {
-                    let detail_html = render_detail(word, particle.as_ref(), secondary_particle.as_ref(), role.as_ref(), *selected_def);
-                    detail_panel.set_inner_html(&detail_html);
+
+                // Clear previous selection highlight on tree rows
+                let rows = container.query_selector_all(".jong-row-selected");
+                if let Ok(list) = rows {
+                    for i in 0..list.length() {
+                        if let Some(node) = list.item(i) {
+                            if let Ok(el) = node.dyn_into::<web_sys::Element>() {
+                                let cls = el.get_attribute("class").unwrap_or_default();
+                                let _ = el.set_attribute("class", &cls.replace(" jong-row-selected", ""));
+                            }
+                        }
+                    }
+                }
+
+                // Clear accordion highlights
+                let accords = container.query_selector_all(".jong-accordion-highlight");
+                if let Ok(list) = accords {
+                    for i in 0..list.length() {
+                        if let Some(node) = list.item(i) {
+                            if let Ok(el) = node.dyn_into::<web_sys::Element>() {
+                                let cls = el.get_attribute("class").unwrap_or_default();
+                                let _ = el.set_attribute("class", &cls.replace(" jong-accordion-highlight", ""));
+                            }
+                        }
+                    }
+                }
+
+                // Toggle: if clicking the same row, deselect
+                let mut sel = selected_id.borrow_mut();
+                if *sel == Some(idx) {
+                    *sel = None;
+                    // Restore all details
+                    let cd = chunk_data_for_click.borrow();
+                    let all_html = render_all_details(&cd);
+                    detail_panel.set_inner_html(&all_html);
+                    return;
+                }
+                *sel = Some(idx);
+                let cls = row.get_attribute("class").unwrap_or_default();
+                let _ = row.set_attribute("class", &format!("{} jong-row-selected", cls));
+
+                // Scroll to and highlight the matching panel
+                let selector = format!("[data-detail-id='{}']", idx);
+                if let Ok(Some(accordion)) = detail_panel.query_selector(&selector) {
+                    let acc_cls = accordion.get_attribute("class").unwrap_or_default();
+                    let _ = accordion.set_attribute("class", &format!("{} jong-accordion-highlight", acc_cls));
+                    if let Ok(html_el) = accordion.dyn_into::<web_sys::HtmlElement>() {
+                        if let Ok(detail_panel_html) = detail_panel.dyn_into::<web_sys::HtmlElement>() {
+                            detail_panel_html.set_scroll_top(html_el.offset_top());
+                        }
+                    }
                 }
             })
         };
@@ -1000,7 +1059,6 @@ fn strip_code_fences(s: &str) -> String {
 }
 
 fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResponse, chunk_data: &Rc<RefCell<Vec<ChunkData>>>) {
-    let mut elements_to_click = Vec::new();
     
     {
         let mut cd = chunk_data.borrow_mut();
@@ -1034,20 +1092,32 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                     if let Some(entry) = cd.get_mut(idx) {
                         entry.4 = Some(def_idx as usize);
                     }
-                    
-                    // Trigger a click on the row to refresh the detail panel
-                    if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
-                        if let Ok(row_html) = row.dyn_into::<web_sys::HtmlElement>() {
-                            elements_to_click.push(row_html);
-                        }
-                    }
                 }
             }
         }
     }
     
-    for el in elements_to_click {
-        el.click();
+    // Re-render the right sidebar to reflect the new disambiguated data
+    if let Ok(Some(detail_panel)) = container.query_selector(".jong-detail") {
+        let cd = chunk_data.borrow();
+        let all_html = render_all_details(&cd);
+        detail_panel.set_inner_html(&all_html);
+        
+        // Re-apply highlight and scroll if a row is currently selected
+        if let Ok(Some(selected_row)) = container.query_selector(".jong-row-selected") {
+            if let Some(idx_str) = selected_row.get_attribute("data-chunk-id") {
+                let selector = format!("[data-detail-id='{}']", idx_str);
+                if let Ok(Some(accordion)) = detail_panel.query_selector(&selector) {
+                    let acc_cls = accordion.get_attribute("class").unwrap_or_default();
+                    let _ = accordion.set_attribute("class", &format!("{} jong-accordion-highlight", acc_cls));
+                    if let Ok(html_el) = accordion.dyn_into::<web_sys::HtmlElement>() {
+                        if let Ok(detail_panel_html) = detail_panel.dyn_into::<web_sys::HtmlElement>() {
+                            detail_panel_html.set_scroll_top(html_el.offset_top());
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1063,9 +1133,12 @@ fn render_structure(sentence: &Sentence, sentence_str: &str, chunk_data: &mut Ve
          <button class='refine-ai-btn'>Disambiguate</button></div>"
     ));
 
+    html.push_str("<div class='jong-tree-scroll-wrapper' style='overflow-x:auto; padding-bottom: 8px;'>");
+    html.push_str("<div class='jong-tree-container' style='display:flex;flex-direction:column;width:max-content;min-width:100%'>");
     for clause in &sentence.clauses {
         html.push_str(&render_clause(clause, chunk_data));
     }
+    html.push_str("</div></div>");
     html.push_str("</div>");
     html
 }
@@ -1316,6 +1389,20 @@ fn render_row(
         ));
     }
     html.push_str("</div>");
+    html
+}
+
+fn render_all_details(chunk_data: &[ChunkData]) -> String {
+    let mut html = String::new();
+    for (i, (word, particle, secondary_particle, role, selected_def)) in chunk_data.iter().enumerate() {
+        let detail_body = render_detail(word, particle.as_ref(), secondary_particle.as_ref(), role.as_ref(), *selected_def);
+        html.push_str(&format!(
+            "<div class='jong-accordion' data-detail-id='{}'>\
+             <div class='jong-accordion-body'>{}</div>\
+             </div>",
+            i, detail_body
+        ));
+    }
     html
 }
 
