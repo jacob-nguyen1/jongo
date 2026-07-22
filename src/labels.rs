@@ -296,7 +296,7 @@ pub static C_FORM_MAP: phf::Map<&'static str, CForms> = phf_map! {
 };
 
 //sentence.rs
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClauseRelation {
     Reason,       // から、ので (ConjunctiveParticle)
     Contrast,     // けど、が (ConjunctiveParticle)
@@ -315,13 +315,50 @@ pub enum ClauseRelation {
 }
 
 impl ClauseRelation {
+    pub fn all() -> &'static [ClauseRelation] {
+        &[
+            Self::Reason,
+            Self::Contrast,
+            Self::Concessive,
+            Self::Conditional,
+            Self::Continuation,
+            Self::Sequence,
+            Self::Simultaneous,
+            Self::Temporal,
+            Self::Until,
+            Self::Main,
+            Self::Modifier,
+            Self::Quotation,
+            Self::Evidential,
+        ]
+    }
+
+    pub fn explanation(&self) -> &'static str {
+        match self {
+            Self::Reason => "Gives a reason or cause (から、ので).",
+            Self::Contrast => "Contrasts with the following clause (けど、が).",
+            Self::Concessive => "Unexpected outcome despite the clause (のに).",
+            Self::Conditional => "Sets a condition (ば、たら).",
+            Self::Continuation => "Continues into the next action (て).",
+            Self::Sequence => "One action after another (てから).",
+            Self::Simultaneous => "Two actions happening at once (ながら).",
+            Self::Temporal => "Indicates when something happens (時).",
+            Self::Until => "Marks an endpoint in time or space (まで).",
+            Self::Main => "The main / sentence-final clause.",
+            Self::Modifier => "A relative clause modifying a noun.",
+            Self::Quotation => "Quotes speech or thought (と).",
+            Self::Evidential => "Indicates source of information (によると).",
+            Self::Ambiguous(_) => "Cannot be determined by rule-based parsing alone.",
+        }
+    }
+
     pub fn color(&self) -> &'static str {
         match self {
             Self::Reason => "#a040a0",
             Self::Contrast | Self::Concessive => "#e07000",
             Self::Conditional => "#40a040",
             Self::Continuation | Self::Sequence | Self::Simultaneous => "#008080",
-            Self::Main => "#000000",
+            Self::Main => "#555555",
             Self::Modifier => "#666666",
             Self::Quotation | Self::Evidential => "#7070a0",
             Self::Temporal | Self::Until => "#88aa44",
@@ -370,10 +407,42 @@ pub enum ParticleRole {
     Adverbial,        // に
     Scope,            // で
     Approximate,      // ぐらい
+    Definition,       // とは
+    Modifier,         // の
+    Emphasis,         // も (scalar/emphatic focus, "even")
+    Quotation,        // と (quote content / citation)
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
 
 impl ParticleRole {
+    pub fn all() -> &'static [ParticleRole] {
+        &[
+            Self::Subject,
+            Self::Object,
+            Self::Topic,
+            Self::IndirectObject,
+            Self::Destination,
+            Self::LocationAction,
+            Self::Means,
+            Self::Source,
+            Self::Limit,
+            Self::Also,
+            Self::ComparisonBase,
+            Self::Accompaniment,
+            Self::Listing,
+            Self::Temporal,
+            Self::Purpose,
+            Self::Agent,
+            Self::Adverbial,
+            Self::Scope,
+            Self::Approximate,
+            Self::Definition,
+            Self::Modifier,
+            Self::Emphasis,
+            Self::Quotation,
+        ]
+    }
+
     pub fn badge(&self) -> &'static str {
         match self {
             Self::Subject => "Subject",
@@ -395,6 +464,10 @@ impl ParticleRole {
             Self::Adverbial => "Adverbial",
             Self::Scope => "Scope",
             Self::Approximate => "Approximate",
+            Self::Definition => "Definition",
+            Self::Modifier => "Modifier",
+            Self::Emphasis => "Emphasis",
+            Self::Quotation => "Quotation",
             Self::Ambiguous(_) => "Ambiguous",
         }
     }
@@ -420,6 +493,10 @@ impl ParticleRole {
             Self::Adverbial => "Turns the word into an adverb.",
             Self::Scope => "The scope or boundary of the action.",
             Self::Approximate => "An approximate amount or point.",
+            Self::Definition => "Defines or explains the preceding term.",
+            Self::Modifier => "Links nouns or indicates possession.",
+            Self::Emphasis => "Adds scalar emphasis or unexpectedness ('even').",
+            Self::Quotation => "Marks quoted content or thought statement.",
             Self::Ambiguous(_) => "Cannot be determined by rule-based parsing alone.",
         }
     }
@@ -447,6 +524,10 @@ impl ParticleRole {
             "Adverbial" => Some(Self::Adverbial),
             "Scope" => Some(Self::Scope),
             "Approximate" => Some(Self::Approximate),
+            "Definition" => Some(Self::Definition),
+            "Modifier" => Some(Self::Modifier),
+            "Emphasis" => Some(Self::Emphasis),
+            "Quotation" | "Quote" => Some(Self::Quotation),
             _ => None,
         }
     }

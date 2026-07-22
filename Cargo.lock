@@ -876,6 +876,7 @@ dependencies = [
  "flate2",
  "js-sys",
  "lindera",
+ "lindera-dictionary",
  "phf",
  "postcard",
  "serde",

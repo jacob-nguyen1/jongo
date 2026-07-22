@@ -50,33 +50,51 @@ pub struct ProcToken {
     pub sub2: PartOfSpeechSubcategory2,
     pub conjugation: Option<ConjugationFeatures>,
     pub staircase: Option<Vec<StaircaseStep>>,
+    pub reading: Option<String>,
 }
 
-impl ProcToken {
-    fn verb_print(&self) -> String {
-        if let Some(conj) = &self.conjugation {
-            let parts: Vec<&str> = [
-                (conj.negative, "negative"),
-                (conj.past, "past"),
-                (conj.continuous, "continuous"),
-                (conj.teform, "teform"),
-                (conj.desiderative, "desiderative"),
-                (conj.volitional, "volitional"),
-                (conj.potential, "potential"),
-                (conj.causative, "causative"),
-                (conj.conditional, "conditional"),
-                (conj.negimperative, "negimperative"),
-            ]
-            .iter()
-            .filter_map(|&(flag, name)| if flag { Some(name) } else { None })
-            .collect();
-
-            match parts.len() {
-                0 => "none".to_string(),
-                _ => parts.join(", "),
+impl ProcToken{
+    pub fn verb_print(&self) -> Option<String> {
+        match &self.conjugation {
+            Some(conj) => {
+                let mut parts = Vec::new();
+                if conj.negative {
+                    parts.push("negative");
+                }
+                if conj.past {
+                    parts.push("past");
+                }
+                if conj.continuous {
+                    parts.push("continuous");
+                }
+                if conj.teform {
+                    parts.push("teform");
+                }
+                if conj.desiderative {
+                    parts.push("desiderative");
+                }
+                if conj.volitional {
+                    parts.push("volitional");
+                }
+                if conj.potential {
+                    parts.push("potential");
+                }
+                if conj.causative {
+                    parts.push("causative");
+                }
+                if conj.conditional {
+                    parts.push("conditional");
+                }
+                if conj.negimperative {
+                    parts.push("negimperative");
+                }
+                if parts.is_empty() {
+                    None
+                } else {
+                    Some(parts.join(", "))
+                }
             }
-        } else {
-            "none".to_string()
+            None => None,
         }
     }
 }
@@ -86,11 +104,15 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
     let mut i = 0;
     while i < line.len() {
         let token = line.get(i).unwrap();
-        let pos = token.pos.clone();
+        let mut pos = token.pos.clone();
+        if token.surface.chars().all(|c| matches!(c, '―' | '—' | '…' | '・' | '−' | '〜' | '～' | '‐')) {
+            pos = PartOfSpeech::Symbol;
+        }
         let base = token.base.clone();
         let sub1 = token.sub1.clone();
         let sub2 = token.sub2;
         let mut conj = token.surface.clone();
+        let reading = token.detail.get(7).filter(|s| *s != "*").cloned();
 
         if token.surface == "か"
             && i + 2 < line.len()
@@ -105,6 +127,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 sub2: PartOfSpeechSubcategory2::X,
                 conjugation: None,
                 staircase: None,
+                reading: Some("カドウカ".to_string()),
             });
             i += 3;
             continue;
@@ -364,6 +387,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             sub2,
             conjugation: Some(state),
             staircase,
+            reading,
         });
         i += 1;
     }
@@ -379,7 +403,17 @@ static PARSER: LazyLock<Parser> = LazyLock::new(|| Parser::new().unwrap());
 impl Parser {
     fn new() -> LinderaResult<Self> {
         let dictionary = load_dictionary("embedded://ipadic")?;
-        let segmenter = Segmenter::new(Mode::Normal, dictionary, None);
+        
+        // Load custom user dictionary compiled from custom_dict.csv at build time
+        let custom_dict_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/custom_dict.bin"));
+        let user_dict = if !custom_dict_bytes.is_empty() {
+            use lindera::dictionary::UserDictionary;
+            Some(UserDictionary::load(custom_dict_bytes).expect("failed to load custom_dict.bin"))
+        } else {
+            None
+        };
+        
+        let segmenter = Segmenter::new(Mode::Normal, dictionary, user_dict);
         let tokenizer = Tokenizer::new(segmenter);
         Ok(Self { tokenizer })
     }
@@ -438,8 +472,28 @@ impl Parser {
     }
 }
 
+pub fn remove_parentheses(text: &str) -> String {
+    let mut result = String::new();
+    let mut depth = 0;
+    for c in text.chars() {
+        if c == '（' || c == '(' {
+            depth += 1;
+        } else if c == '）' || c == ')' {
+            if depth > 0 {
+                depth -= 1;
+            }
+        } else if depth == 0 {
+            if !c.is_whitespace() {
+                result.push(c);
+            }
+        }
+    }
+    result
+}
+
 pub fn analyze_sentence(text: &str) -> Vec<ProcToken> {
-    match PARSER.parse(text) {
+    let clean_text = remove_parentheses(text);
+    match PARSER.parse(&clean_text) {
         Ok(tokens) => filter(&tokens),
         Err(_) => Vec::new(),
     }
@@ -491,10 +545,7 @@ pub fn grammar() {
                 filtered.iter().for_each(|f| {
                     println!(
                         "Word: {}, Base: {}, POS: {:?}, Conjugation: {}",
-                        f.full,
-                        f.base,
-                        f.pos,
-                        f.verb_print()
+                        f.full, f.base, f.pos, f.verb_print().unwrap_or("none".to_string())
                     );
                 });
             }
