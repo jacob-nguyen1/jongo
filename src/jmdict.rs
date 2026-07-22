@@ -82,6 +82,11 @@ pub fn lookup_first_result(
     lookup(word, pos, is_proper_noun).into_iter().next()
 }
 
+/// Check whether a base form is present in the JMdict vocabulary.
+pub fn is_native_verb(word: &str) -> bool {
+    !lookup_jmdict(word).is_empty()
+}
+
 fn lookup_jmdict(word: &str) -> Vec<LookupResult> {
     let mut results = Vec::new();
     if let Ok(idx) = JMDICT_INDEX.by_form.binary_search_by_key(&word, |&(f, _)| f) {
