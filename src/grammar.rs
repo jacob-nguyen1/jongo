@@ -47,10 +47,11 @@ pub struct ProcToken {
     pub sub2: PartOfSpeechSubcategory2,
     pub conjugation: Option<ConjugationFeatures>,
     pub staircase: Option<Vec<StaircaseStep>>,
+    pub reading: Option<String>,
 }
 
 impl ProcToken{
-    fn verbPrint(&self) -> String {
+    pub fn verb_print(&self) -> Option<String> {
         match &self.conjugation {
             Some(conj) => {
                 let mut parts = Vec::new();
@@ -85,12 +86,12 @@ impl ProcToken{
                     parts.push("negimperative");
                 }
                 if parts.is_empty() {
-                    "none".to_string()
+                    None
                 } else {
-                    parts.join(", ")
+                    Some(parts.join(", "))
                 }
             }
-            None => "none".to_string(),
+            None => None,
         }
     }
 }
@@ -102,11 +103,15 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
     let mut i = 0;
     while i < line.len() {
         let token = line.get(i).unwrap();
-        let pos = token.pos.clone();
+        let mut pos = token.pos.clone();
+        if token.surface.chars().all(|c| matches!(c, '―' | '—' | '…' | '・' | '−' | '〜' | '～' | '‐')) {
+            pos = PartOfSpeech::Symbol;
+        }
         let base = token.base.clone();
-        let sub1=token.sub1.clone();
+        let sub1 = token.sub1.clone();
         let sub2 = token.sub2;
         let mut conj = token.surface.clone();
+        let reading = token.detail.get(7).filter(|s| *s != "*").cloned();
 
         if token.surface == "か" && i + 2 < line.len() && line[i+1].surface == "どう" && line[i+2].surface == "か" {
             filtered_tokens.push(ProcToken {
@@ -117,6 +122,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 sub2: PartOfSpeechSubcategory2::X,
                 conjugation: None,
                 staircase: None,
+                reading: Some("カドウカ".to_string()),
             });
             i += 3;
             continue;
@@ -279,6 +285,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
                 negimperative,
             }),
             staircase,
+            reading,
         });
         i += 1;
     }
@@ -377,8 +384,28 @@ impl Parser {
     }
 }
 
+pub fn remove_parentheses(text: &str) -> String {
+    let mut result = String::new();
+    let mut depth = 0;
+    for c in text.chars() {
+        if c == '（' || c == '(' {
+            depth += 1;
+        } else if c == '）' || c == ')' {
+            if depth > 0 {
+                depth -= 1;
+            }
+        } else if depth == 0 {
+            if !c.is_whitespace() {
+                result.push(c);
+            }
+        }
+    }
+    result
+}
+
 pub fn analyze_sentence(text: &str) -> Vec<ProcToken> {
-    match PARSER.parse(text) {
+    let clean_text = remove_parentheses(text);
+    match PARSER.parse(&clean_text) {
         Ok(tokens) => filter(&tokens),
         Err(_) => Vec::new(),
     }
@@ -428,7 +455,7 @@ pub fn grammar() {
                 filtered.iter().for_each(|f| {
                     println!(
                         "Word: {}, Base: {}, POS: {:?}, Conjugation: {}",
-                        f.full, f.base, f.pos, f.verbPrint()
+                        f.full, f.base, f.pos, f.verb_print().unwrap_or("none".to_string())
                     );
                 });
             }

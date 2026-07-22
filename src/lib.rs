@@ -99,6 +99,15 @@ fn persist_dark_mode(on: bool) {
     let _ = func.call1(&JsValue::NULL, &JsValue::from_bool(on));
 }
 
+fn persist_setting(key: &str, val: &JsValue) {
+    let global = js_sys::global();
+    if let Ok(func_val) = js_sys::Reflect::get(&global, &JsValue::from_str("__jongo_save_setting")) {
+        if let Ok(func) = func_val.dyn_into::<js_sys::Function>() {
+            let _ = func.call2(&JsValue::NULL, &JsValue::from_str(key), val);
+        }
+    }
+}
+
 fn apply_theme(el: &web_sys::HtmlElement, dark: bool) {
     if dark {
         let _ = el.set_attribute("data-jong-dark", "1");
@@ -157,6 +166,8 @@ struct JongoController {
     mouse_y: f32,
     enabled: bool,
     dark_mode: bool,
+    furigana: bool,
+    font_size: u32,
     prompt: Option<web_sys::HtmlElement>,
     analyses: Vec<AnalysisWindow>,
     next_id: u32,
@@ -170,6 +181,8 @@ impl JongoController {
             mouse_y: 0.0,
             enabled: true,
             dark_mode: false,
+            furigana: true,
+            font_size: 16,
             prompt: None,
             analyses: Vec::new(),
             next_id: 0,
@@ -284,7 +297,7 @@ impl JongoController {
         element.style().set_property("padding", "10px").unwrap();
         element.style().set_property("color", "black").unwrap();
 
-        element.set_inner_html("<button style='all:revert'>jong</button>");
+        element.set_inner_html("<button class='jong-prompt-btn' style='background:#fff;color:#333;border:1px solid #ccc;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:500;cursor:pointer'>jong</button>");
         apply_theme(&element, self.dark_mode);
 
         // delete old prompt
@@ -364,12 +377,14 @@ impl JongoController {
             "<style>\
              .jong-row{{cursor:pointer;border-radius:3px}}\
              .jong-row:hover{{background:#eef2f7}}\
-             .jong-drag-handle{{cursor:move;height:28px;box-sizing:border-box;background:#f0f0f0;border-bottom:1px solid #ddd;user-select:none;flex-shrink:0}}\
-             .jong-header-btn{{position:absolute;top:4px;height:20px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;background:#eee;color:#333;border:1px solid #ccc;border-radius:3px;cursor:pointer;padding:0 7px;z-index:1;font-size:12px;line-height:1}}\
-             .jong-header-btn:hover{{background:#ddd}}\
-             .jong-close{{right:6px;background:red;color:white;border:none}}\
-             .jong-settings{{right:34px}}\
-             .jong-legend{{right:62px}}\
+             .jong-top-bar{{display:flex;align-items:stretch;background:#f5f5f5;border-bottom:1px solid #e0e0e0;flex-shrink:0;height:32px}}\
+             .jong-drag-handle{{flex:1;cursor:move;display:flex;align-items:center;padding:0 12px;user-select:none}}\
+             .jong-legend{{background:#fefce8;color:#ca8a04;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
+             .jong-legend:hover{{background:#fef9c3;color:#a16207}}\
+             .jong-settings{{background:#f0f4f8;color:#3b82f6;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
+             .jong-settings:hover{{background:#dbeafe;color:#2563eb}}\
+             .jong-close{{background:#fef2f2;color:#ef4444;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
+             .jong-close:hover{{background:#fee2e2;color:#dc2626}}\
              .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box;overflow:hidden}}\
              .jong-structure-scroll{{direction:rtl;overflow-y:auto;flex:1;min-width:0;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8;margin:0;user-select:none}}\
              .jong-structure-scroll::-webkit-scrollbar{{width:5px}}\
@@ -377,12 +392,14 @@ impl JongoController {
              .jong-structure-scroll::-webkit-scrollbar-track{{background:#e8e8e8}}\
              .jong-structure-inner{{direction:ltr;padding:0 8px 0 6px}}\
              .jong-detail{{flex:1;min-width:0;overflow-y:auto;border-left:1px solid #ddd;padding-left:12px}}\
-             .jong-muted{{color:#888}}\
-             .jong-hint{{color:#666;font-size:11px}}\
+             .jong-muted{{color:#444}}\
+             .jong-hint{{color:#555;font-size:11px}}\
              .jong-word-head{{font-weight:600;color:#111}}\
-             .jong-word-mod{{font-weight:400;color:#555}}\
-             .jong-tree-arm{{font-family:monospace;white-space:pre;color:#888}}\
+             .jong-word-mod{{font-weight:500;color:#111}}\
+             .jong-tree-arm{{font-family:monospace;white-space:pre;color:#666}}\
              .jong-role-badge{{font-size:10px;color:#666;border:1px solid #ccc;border-radius:3px;padding:0 4px}}\
+             .ambiguous-badge{{color:#b45309 !important;border-color:#f59e0b !important;background:#fffbeb !important;font-weight:600}}\
+             .resolved-badge{{color:#15803d !important;border-color:#22c55e !important;background:#f0fdf4 !important;font-weight:600}}\
              .refine-ai-btn{{background:#f0f0f0;border:1px solid #ccc;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;color:#333;font-weight:500;flex-shrink:0}}\
              .jong-def-box{{max-height:150px;overflow-y:auto;background:#fafafa;border:1px solid #eee;border-radius:4px;padding:8px 8px 8px 24px;margin-top:2px}}\
              .jong-def-box ol{{margin:0;padding:0;color:#333}}\
@@ -404,15 +421,20 @@ impl JongoController {
              .jong-switch input:checked + .jong-slider::before{{transform:translateX(20px)}}\
              .jong-back{{background:none;border:none;color:#4a9;cursor:pointer;font-size:12px;padding:0;margin-bottom:10px}}\
              [data-jong-dark=\"1\"] .jong-row:hover{{background:#4a4a4a}}\
-             [data-jong-dark=\"1\"] .jong-drag-handle{{background:#4a4a4a;border-bottom-color:#666;color:#bbb}}\
-             [data-jong-dark=\"1\"] .jong-header-btn{{background:#4a4a4a;color:#e0e0e0;border-color:#777}}\
-             [data-jong-dark=\"1\"] .jong-header-btn:hover{{background:#5a5a5a}}\
+             [data-jong-dark=\"1\"] .jong-top-bar{{background:#2d2d2d;border-bottom-color:#444}}\
+             [data-jong-dark=\"1\"] .jong-drag-handle{{color:#bbb}}\
+             [data-jong-dark=\"1\"] .jong-legend{{background:#3b2d12;color:#facc15;border-left-color:#444}}\
+             [data-jong-dark=\"1\"] .jong-legend:hover{{background:#543e17;color:#fde047}}\
+             [data-jong-dark=\"1\"] .jong-settings{{background:#1e293b;color:#60a5fa;border-left-color:#444}}\
+             [data-jong-dark=\"1\"] .jong-settings:hover{{background:#334155;color:#93c5fd}}\
+             [data-jong-dark=\"1\"] .jong-close{{background:#451a1a;color:#f87171;border-left-color:#444}}\
+             [data-jong-dark=\"1\"] .jong-close:hover{{background:#7f1d1d;color:#fca5a5}}\
              [data-jong-dark=\"1\"] .jong-detail{{border-left-color:#666}}\
-             [data-jong-dark=\"1\"] .jong-muted{{color:#aaa}}\
-             [data-jong-dark=\"1\"] .jong-hint{{color:#aaa}}\
+             [data-jong-dark=\"1\"] .jong-muted{{color:#ddd}}\
+             [data-jong-dark=\"1\"] .jong-hint{{color:#ccc}}\
              [data-jong-dark=\"1\"] .jong-word-head{{color:#f0f0f0}}\
-             [data-jong-dark=\"1\"] .jong-word-mod{{color:#c8c8c8}}\
-             [data-jong-dark=\"1\"] .jong-tree-arm{{color:#999}}\
+             [data-jong-dark=\"1\"] .jong-word-mod{{color:#e0e0e0}}\
+             [data-jong-dark=\"1\"] .jong-tree-arm{{color:#aaa}}\
              [data-jong-dark=\"1\"] .jong-role-badge{{color:#ccc;border-color:#777}}\
              [data-jong-dark=\"1\"] .refine-ai-btn{{background:#4a4a4a;border-color:#777;color:#e0e0e0}}\
              [data-jong-dark=\"1\"] .jong-def-box{{background:#333;border-color:#555}}\
@@ -428,13 +450,22 @@ impl JongoController {
              [data-jong-dark=\"1\"] .jong-legend-badge{{border-color:#777;color:#ddd}}\
              [data-jong-dark=\"1\"] .jong-settings-row{{background:#4a4a4a}}\
              [data-jong-dark=\"1\"] .jong-slider{{background:#666}}\
-             [data-jong-dark=\"1\"] .resolved-badge{{border-color:#6c6 !important;color:#8d8 !important}}\
+             [data-jong-dark=\"1\"] .ambiguous-badge{{color:#fbbf24 !important;border-color:#d97706 !important;background:#451a03 !important}}\
+             [data-jong-dark=\"1\"] .resolved-badge{{color:#4ade80 !important;border-color:#22c55e !important;background:#052e16 !important}}\
              </style>\
-             <div class='jong-drag-handle'></div>\
-             <button class='jong-header-btn jong-legend' title='Legend'>?</button>\
-             <button class='jong-header-btn jong-settings' title='Settings'>⚙</button>\
-             <button class='jong-header-btn jong-close' title='Close'>✕</button>\
-             <div class='jong-body'>{analysis_body}</div>"
+             <div class='jong-top-bar'>\
+                <div class='jong-drag-handle'></div>\
+                <button class='jong-legend' title='Legend'>\
+                  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'></circle><path d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'></path><line x1='12' y1='17' x2='12.01' y2='17'></line></svg>\
+                </button>\
+                <button class='jong-settings' title='Settings'>\
+                  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='3'></circle><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path></svg>\
+                </button>\
+                <button class='jong-close' title='Close'>\
+                  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='18' y1='6' x2='6' y2='18'></line><line x1='6' y1='6' x2='18' y2='18'></line></svg>\
+                </button>\
+              </div>\
+              <div class='jong-body'>{analysis_body}</div>"
         );
         element.set_inner_html(&html);
         element.style().set_property("display", "flex").unwrap();
@@ -562,9 +593,15 @@ impl JongoController {
             let element_settings = element.clone();
             let wire_back = wire_back_button.clone();
             let settings_cb = Closure::<dyn FnMut()>::new(move || {
-                let dark = CONTROLLER.with(|c| c.borrow().dark_mode);
+                let (dark, furi, fsize) = CONTROLLER.with(|c| {
+                    if let Ok(b) = c.try_borrow() {
+                        (b.dark_mode, b.furigana, b.font_size)
+                    } else {
+                        (false, true, 16)
+                    }
+                });
                 if let Ok(Some(body)) = element_settings.query_selector(".jong-body") {
-                    body.set_inner_html(&render_settings_panel(dark));
+                    body.set_inner_html(&render_settings_panel(dark, furi, fsize));
                     if let Ok(html_body) = body.clone().dyn_into::<web_sys::HtmlElement>() {
                         let _ = html_body.style().set_property("display", "flex");
                         let _ = html_body.style().set_property("flex-direction", "column");
@@ -586,6 +623,39 @@ impl JongoController {
                         });
                         toggle.add_event_listener_with_callback("change", toggle_cb.as_ref().unchecked_ref()).unwrap();
                         toggle_cb.forget();
+                    }
+
+                    if let Ok(Some(toggle)) = body.query_selector("#jong-furigana-toggle") {
+                        let toggle_cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |e: web_sys::Event| {
+                            let Some(target) = e.target() else { return };
+                            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
+                            let on = input.checked();
+                            CONTROLLER.with(|c| {
+                                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                                    ctrl.furigana = on;
+                                }
+                            });
+                            persist_setting("furigana", &JsValue::from_bool(on));
+                        });
+                        toggle.add_event_listener_with_callback("change", toggle_cb.as_ref().unchecked_ref()).unwrap();
+                        toggle_cb.forget();
+                    }
+
+                    if let Ok(Some(input_el)) = body.query_selector("#jong-font-size-input") {
+                        let input_cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |e: web_sys::Event| {
+                            let Some(target) = e.target() else { return };
+                            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
+                            if let Ok(val) = input.value().parse::<u32>() {
+                                CONTROLLER.with(|c| {
+                                    if let Ok(mut ctrl) = c.try_borrow_mut() {
+                                        ctrl.font_size = val;
+                                    }
+                                });
+                                persist_setting("fontSize", &JsValue::from_f64(val as f64));
+                            }
+                        });
+                        input_el.add_event_listener_with_callback("change", input_cb.as_ref().unchecked_ref()).unwrap();
+                        input_cb.forget();
                     }
                 }
             });
@@ -889,6 +959,24 @@ pub fn set_dark_mode(on: bool) {
     });
 }
 
+#[wasm_bindgen]
+pub fn set_furigana(on: bool) {
+    CONTROLLER.with(|c| {
+        if let Ok(mut ctrl) = c.try_borrow_mut() {
+            ctrl.furigana = on;
+        }
+    });
+}
+
+#[wasm_bindgen]
+pub fn set_font_size(size: u32) {
+    CONTROLLER.with(|c| {
+        if let Ok(mut ctrl) = c.try_borrow_mut() {
+            ctrl.font_size = size;
+        }
+    });
+}
+
 fn strip_code_fences(s: &str) -> String {
     let trimmed = s.trim();
     // Strip ```json ... ``` or ``` ... ```
@@ -933,12 +1021,7 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                         if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
                             if let Some(badge) = row.query_selector(".ambiguous-badge").unwrap() {
                                 badge.set_inner_html(resolved_role.badge());
-                                badge.set_class_name("resolved-badge");
-                                if let Ok(badge_html) = badge.dyn_into::<web_sys::HtmlElement>() {
-                                    let _ = badge_html.style().set_property("border-color", "#4a9");
-                                    let _ = badge_html.style().set_property("color", "#4a9");
-                                    let _ = badge_html.style().set_property("font-weight", "600");
-                                }
+                                badge.set_class_name("resolved-badge jong-role-badge");
                             }
                         }
                     } else {
@@ -987,21 +1070,39 @@ fn render_structure(sentence: &Sentence, sentence_str: &str, chunk_data: &mut Ve
     html
 }
 
-fn render_settings_panel(dark_mode: bool) -> String {
-    let checked = if dark_mode { " checked" } else { "" };
+fn render_settings_panel(dark_mode: bool, furigana: bool, font_size: u32) -> String {
+    let checked_dark = if dark_mode { " checked" } else { "" };
+    let checked_furi = if furigana { " checked" } else { "" };
     format!(
         "<div class='jong-panel'>\
            <button class='jong-back'>← Back</button>\
            <div style='font-size:14px;font-weight:600;margin-bottom:12px'>Settings</div>\
-           <div class='jong-settings-row'>\
+           <div class='jong-settings-row' style='margin-bottom:8px'>\
              <div>\
                <div style='font-weight:500'>Dark mode</div>\
                <div class='jong-hint' style='margin-top:2px'>Applies to Jongo windows only</div>\
              </div>\
              <label class='jong-switch' title='Toggle dark mode'>\
-               <input type='checkbox' id='jong-dark-toggle'{checked} />\
+               <input type='checkbox' id='jong-dark-toggle'{checked_dark} />\
                <span class='jong-slider'></span>\
              </label>\
+           </div>\
+           <div class='jong-settings-row' style='margin-bottom:8px'>\
+             <div>\
+               <div style='font-weight:500'>Furigana</div>\
+               <div class='jong-hint' style='margin-top:2px'>Show readings above kanji</div>\
+             </div>\
+             <label class='jong-switch' title='Toggle furigana'>\
+               <input type='checkbox' id='jong-furigana-toggle'{checked_furi} />\
+               <span class='jong-slider'></span>\
+             </label>\
+           </div>\
+           <div class='jong-settings-row'>\
+             <div>\
+               <div style='font-weight:500'>Font Size</div>\
+               <div class='jong-hint' style='margin-top:2px'>Base font size for structure view (px)</div>\
+             </div>\
+             <input type='number' id='jong-font-size-input' value='{font_size}' min='10' max='32' style='width:50px;padding:4px;border:1px solid #ccc;border-radius:4px' />\
            </div>\
          </div>"
     )
@@ -1135,6 +1236,34 @@ fn render_modifier(modifier: &Modifier, prefix: &str, branch: &str, chunk_data: 
     }
 }
 
+fn katakana_to_hiragana(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if ('\u{30a1}'..='\u{30f6}').contains(&c) {
+                char::from_u32(c as u32 - 0x60).unwrap_or(c)
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+fn has_kanji(s: &str) -> bool {
+    s.chars().any(|c| matches!(c, '\u{4e00}'..='\u{9faf}' | '\u{3400}'..='\u{4dbf}'))
+}
+
+fn format_word_html(word: &ProcToken, enable_furigana: bool) -> String {
+    if enable_furigana && has_kanji(&word.full) {
+        if let Some(r) = &word.reading {
+            let h_reading = katakana_to_hiragana(r);
+            if !h_reading.is_empty() && h_reading != word.full {
+                return format!("<ruby>{}<rt>{}</rt></ruby>", word.full, h_reading);
+            }
+        }
+    }
+    word.full.clone()
+}
+
 fn render_row(
     word: &ProcToken,
     particle: Option<&ProcToken>,
@@ -1147,23 +1276,35 @@ fn render_row(
     let id = chunk_data.len();
     chunk_data.push((word.clone(), particle.cloned(), secondary_particle.cloned(), role.cloned(), None));
 
+    let (enable_furi, base_font_size) = CONTROLLER.with(|c| {
+        if let Ok(b) = c.try_borrow() {
+            (b.furigana, b.font_size)
+        } else {
+            (true, 16)
+        }
+    });
+
     let (size, word_class) = if prefix.is_empty() && branch.is_empty() {
-        ("13px", "jong-word-head")
+        (format!("{}px", base_font_size), "jong-word-head")
     } else {
-        ("12px", "jong-word-mod")
+        (format!("{}px", (base_font_size as f32 * 0.9) as u32), "jong-word-mod")
     };
     
+    let word_html = format_word_html(word, enable_furi);
+
     let mut html = format!(
         "<div class='jong-row' data-chunk-id='{id}' style='font-size:{size};line-height:1.2;padding:0 4px'>\
          <span class='jong-tree-arm'>{}{}</span>\
          <span class='{word_class}'>{}</span>",
-        prefix, branch, word.full
+        prefix, branch, word_html
     );
     if let Some(p) = particle {
-        html.push_str(&format!(" <span class='{word_class}'>{}</span>", p.full));
+        let p_html = format_word_html(p, enable_furi);
+        html.push_str(&format!(" <span class='{word_class}'>{}</span>", p_html));
     }
     if let Some(sp) = secondary_particle {
-        html.push_str(&format!(" <span class='{word_class}'>{}</span>", sp.full));
+        let sp_html = format_word_html(sp, enable_furi);
+        html.push_str(&format!(" <span class='{word_class}'>{}</span>", sp_html));
     }
     if let Some(r) = role {
         let is_ambig = matches!(r, ParticleRole::Ambiguous(_));
@@ -1263,13 +1404,13 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, secondary_parti
     if let Some(p) = particle {
         html.push_str("<div class='jong-detail-section' style='margin-top:10px;padding-top:6px'>");
         html.push_str(&format!(
-            "<div style='font-weight:600'>Particle: {}</div>",
+            "<div style='font-weight:600;font-size:13px;margin-bottom:4px'>Particle: {}</div>",
             p.full
         ));
         match role {
             Some(ParticleRole::Ambiguous(candidates)) => {
                 html.push_str(
-                    "<div class='jong-muted'>Role is ambiguous — candidates:</div>\
+                    "<div><strong>Role is ambiguous (candidates):</strong></div>\
                      <ul style='margin:4px 0 4px 16px;padding:0'>",
                 );
                 for c in candidates {
@@ -1283,18 +1424,18 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, secondary_parti
             }
             Some(r) => {
                 html.push_str(&format!(
-                    "<div><span class='jong-muted'>Role:</span> {} — {}</div>",
+                    "<div><strong>Role:</strong> {} — {}</div>",
                     r.badge(),
                     r.explanation()
                 ));
             }
             None => {
-                html.push_str("<div class='jong-muted'>Role: unknown</div>");
+                html.push_str("<div><strong>Role:</strong> unknown</div>");
             }
         }
         if let Some(sp) = secondary_particle {
             html.push_str(&format!(
-                "<div style='margin-top:4px'><span class='jong-muted'>+ Topicalizer:</span> <strong>{}</strong></div>",
+                "<div style='margin-top:6px'><strong>Topicalizer:</strong> {}</div>",
                 sp.full
             ));
         }

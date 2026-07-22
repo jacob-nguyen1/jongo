@@ -32,6 +32,7 @@ pub struct Chunk {
     pub particle: Option<ProcToken>,
     pub secondary_particle: Option<ProcToken>,
     pub particle_role: Option<ParticleRole>,
+    pub secondary_particle_role: Option<ParticleRole>,
     pub modifiers: Vec<Modifier>,
     pub is_head: bool,
 }
@@ -97,6 +98,134 @@ fn extract_adverbs(chunks: &mut Vec<Chunk>) -> Vec<Modifier> {
 
 
 
+
+fn apply_greedy_merges(tokens: Vec<ProcToken>) -> Vec<ProcToken> {
+    let mut merged = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        let mut current = tokens[i].clone();
+        
+        // 0. Merge compound conjunctive particle "といえど" / "といえども"
+        if (current.full == "と" || current.base == "と") && i + 2 < tokens.len() && tokens[i+1].full == "いえ" && (tokens[i+2].full == "ど" || tokens[i+2].full == "ども") {
+            let mut merged_token = current.clone();
+            let full = format!("といえ{}", tokens[i+2].full);
+            merged_token.full = full.clone();
+            merged_token.base = full;
+            merged_token.pos = PartOfSpeech::Particle;
+            merged_token.sub1 = PartOfSpeechSubcategory1::ConjuctiveParticle;
+            merged_token.sub2 = PartOfSpeechSubcategory2::X;
+            merged.push(merged_token);
+            i += 3;
+            continue;
+        }
+
+        // 1. Suru-verb merge: Noun + する/できる
+        if current.pos == PartOfSpeech::Noun && current.sub1 == PartOfSpeechSubcategory1::SuruVerb && i + 1 < tokens.len() {
+            let next = &tokens[i + 1];
+            if next.pos == PartOfSpeech::Verb && (next.base == "する" || next.base == "できる") {
+                // Do NOT modify current.base so that dictionary lookup for the noun succeeds!
+                let noun_base = current.base.clone();
+                current.full.push_str(&next.full);
+                current.pos = PartOfSpeech::Verb;
+                current.sub1 = next.sub1.clone();
+                if let Some(mut r) = current.reading.take() {
+                    if let Some(next_r) = &next.reading {
+                        r.push_str(next_r);
+                    }
+                    current.reading = Some(r);
+                }
+                current.sub2 = next.sub2.clone();
+                current.conjugation = next.conjugation.clone();
+                
+                let mut new_staircase = vec![crate::grammar::StaircaseStep {
+                    text: noun_base.clone(),
+                    description: "Noun Stem".to_string(),
+                }];
+                
+                if let Some(next_stair) = &next.staircase {
+                    for (idx, step) in next_stair.iter().enumerate() {
+                        let desc = if idx == 0 { "Suru-verb" } else { &step.description };
+                        new_staircase.push(crate::grammar::StaircaseStep {
+                            text: format!("{}{}", noun_base, step.text),
+                            description: desc.to_string(),
+                        });
+                    }
+                } else {
+                    new_staircase.push(crate::grammar::StaircaseStep {
+                        text: format!("{}{}", noun_base, next.base),
+                        description: "Suru-verb".to_string(),
+                    });
+                }
+                current.staircase = Some(new_staircase);
+                
+                merged.push(current);
+                i += 2;
+                continue;
+            }
+        }
+        
+        // 2. Greedy Noun + Noun (Common & Proper Name) merge
+        let mut lookahead = i + 1;
+        let mut best_merge_len = 0;
+        let mut candidate_full = current.full.clone();
+        let mut candidate_base = current.base.clone();
+        let mut candidate_reading = current.reading.clone();
+        let mut is_proper_merge = false;
+        
+        if current.pos == PartOfSpeech::Noun && current.sub1 != PartOfSpeechSubcategory1::Bound && current.sub1 != PartOfSpeechSubcategory1::AdjectiveVerbStem {
+            let mut temp_full = current.full.clone();
+            let mut temp_base = current.base.clone();
+            let mut temp_reading = current.reading.clone();
+            while lookahead < tokens.len() {
+                let next = &tokens[lookahead];
+                if next.pos == PartOfSpeech::Noun && next.sub1 != PartOfSpeechSubcategory1::Bound && next.sub1 != PartOfSpeechSubcategory1::AdjectiveVerbStem {
+                    temp_full.push_str(&next.full);
+                    temp_base.push_str(&next.base);
+                    if let Some(mut r) = temp_reading.take() {
+                        if let Some(next_r) = &next.reading {
+                            r.push_str(next_r);
+                        }
+                        temp_reading = Some(r);
+                    }
+                    
+                    let is_name_pair = (current.sub1 == PartOfSpeechSubcategory1::ProperNoun || current.sub2 == PartOfSpeechSubcategory2::Name) 
+                        && (next.sub1 == PartOfSpeechSubcategory1::ProperNoun || next.sub2 == PartOfSpeechSubcategory2::Name);
+
+                    if is_name_pair || crate::jmdict::lookup_first_result(&temp_base, PartOfSpeech::Noun, false).is_some() || crate::jmdict::lookup_first_result(&temp_base, PartOfSpeech::Noun, true).is_some() {
+                        best_merge_len = lookahead - i + 1;
+                        candidate_full = temp_full.clone();
+                        candidate_base = temp_base.clone();
+                        candidate_reading = temp_reading.clone();
+                        if is_name_pair || current.sub1 == PartOfSpeechSubcategory1::ProperNoun {
+                            is_proper_merge = true;
+                        }
+                    }
+                    lookahead += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        if best_merge_len > 0 {
+            current.full = candidate_full;
+            current.base = candidate_base;
+            current.reading = candidate_reading;
+            if is_proper_merge {
+                current.sub1 = PartOfSpeechSubcategory1::ProperNoun;
+            }
+            merged.push(current);
+            i += best_merge_len;
+            continue;
+        }
+        
+        merged.push(current);
+        i += 1;
+    }
+    merged
+}
+
+
 pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
     if tokens.is_empty() {
         return None;
@@ -136,6 +265,8 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                     t.sub1 == PartOfSpeechSubcategory1::OpenParenthesis ||
                     t.sub1 == PartOfSpeechSubcategory1::ClosedParenthesis)
         .collect();
+        
+    let tokens = apply_greedy_merges(tokens);
 
     let mut clauses: Vec<Clause> = Vec::new();
     let mut chunks: Vec<Chunk> = Vec::new();
@@ -176,6 +307,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                         particle: None,
                         secondary_particle: None,
                         particle_role: None,
+                        secondary_particle_role: None,
                         modifiers: vec![Modifier::Quotation(Box::new(inner_sentence))],
                         is_head: false,
                     });
@@ -201,6 +333,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
             particle: None,
             secondary_particle: None,
             particle_role: None,
+            secondary_particle_role: None,
             modifiers: std::mem::take(&mut pending_modifiers),
             is_head: true,
         });
@@ -218,6 +351,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                 && (full.ends_with("て") || full.ends_with("で")) => {
                 clauses.push(package_clause(chunks, ClauseRelation::Continuation, None, std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 1;
             }
 
@@ -275,6 +409,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                 connective_token.full = format!("{}に", connective_token.full); // combine into "のに"
                 clauses.push(package_clause(chunks, ClauseRelation::Concessive, Some(connective_token), std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 2;
             }
 
@@ -287,13 +422,15 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                         particle_token.full.push_str(&no_chunk.word.full);
                         if let Some(mut noun_chunk) = chunks.pop() {
                             noun_chunk.particle = Some(particle_token);
+                            noun_chunk.particle_role = Some(ParticleRole::Modifier);
                             noun_chunk
                         } else {
-                            Chunk { word: particle_token, prefix: None, particle: None, secondary_particle: None, particle_role: None, modifiers: Vec::new(), is_head: true }
+                            Chunk { word: particle_token, prefix: None, particle: None, secondary_particle: None, particle_role: None, secondary_particle_role: None, modifiers: Vec::new(), is_head: true }
                         }
                     } else {
                         let mut prev_chunk = prev_chunk;
                         prev_chunk.particle = Some(no_chunk.word);
+                        prev_chunk.particle_role = Some(ParticleRole::Modifier);
                         prev_chunk
                     };
                     lim_chunk.is_head = false;
@@ -320,6 +457,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                 
                 clauses.push(package_clause(chunks, ClauseRelation::Reason, Some(connective_token), std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 1;
             }
 
@@ -372,6 +510,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                 
                 clauses.push(package_clause(chunks, ClauseRelation::Temporal, Some(connective_token), std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 1 + consumed;
             }
 
@@ -403,6 +542,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
 
                 clauses.push(package_clause(chunks, relation, connective, std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 1;
             }
 
@@ -411,6 +551,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                 let made_token = tokens.get(i + 1).unwrap().clone();
                 clauses.push(package_clause(chunks, ClauseRelation::Until, Some(made_token), std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 2;
             }
 
@@ -420,6 +561,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                 let connective = chunks.pop().map(|c| c.word);
                 clauses.push(package_clause(chunks, relation, connective, std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 1;
             }
 
@@ -450,10 +592,22 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
 
             // Quotation と — Lindera reliably tags as sub2 == Quotation
             ProcToken { pos: PartOfSpeech::Particle, sub2: PartOfSpeechSubcategory2::Quotation, .. } => {
+                if let Some(next) = tokens.get(i + 1) {
+                    if next.pos == PartOfSpeech::Verb && chunks.len() >= 1 {
+                        let mut chunk = chunks.pop().unwrap(); // Remove the preceding chunk
+                        chunk.particle = Some(current.clone()); // Attach と to it
+                        chunk.particle_role = Some(ParticleRole::Quotation);
+                        chunks.push(chunk);
+                        i += 1;
+                        continue;
+                    }
+                }
+                
                 let to_chunk = chunks.pop().unwrap(); // Remove the と
                 let connective = Some(to_chunk.word);
                 clauses.push(package_clause(chunks, ClauseRelation::Quotation, connective, std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 1;
             }
 
@@ -470,7 +624,17 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                         "けど" | "が" => ClauseRelation::Contrast,
                         "のに" => ClauseRelation::Concessive,
                         "ば" => ClauseRelation::Conditional,
-                        "と" => ClauseRelation::Ambiguous(vec![ClauseRelation::Conditional, ClauseRelation::Quotation]),
+                        "と" => {
+                            let next_verb_base = tokens.iter().skip(i + 1)
+                                .find(|t| t.pos != PartOfSpeech::Symbol && t.pos != PartOfSpeech::Prefix)
+                                .map(|t| t.base.as_str());
+
+                            if matches!(next_verb_base, Some("思う" | "考える" | "いう" | "言う" | "述べる" | "聞く" | "信じる" | "感じる" | "知る" | "祈る" | "誓う")) {
+                                ClauseRelation::Quotation
+                            } else {
+                                ClauseRelation::Ambiguous(vec![ClauseRelation::Conditional, ClauseRelation::Quotation])
+                            }
+                        }
                         "ながら" => ClauseRelation::Simultaneous,
                         _ => ClauseRelation::Main,
                     }
@@ -478,6 +642,7 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                 let connective = chunks.pop().map(|c| c.word);
                 clauses.push(package_clause(chunks, relation, connective, std::mem::take(&mut pending_ending_particles)));
                 chunks = Vec::new();
+                comma_barrier = None;
                 i += 1;
             }
 
@@ -534,8 +699,8 @@ fn package_clause(mut chunks: Vec<Chunk>, relation: ClauseRelation, connective: 
         // Fallback for trailing ending particles on an empty clause
         return Clause {
             predicate: Chunk {
-                word: ProcToken { full: "".to_string(), base: "".to_string(), pos: PartOfSpeech::Symbol, sub1: PartOfSpeechSubcategory1::X, sub2: PartOfSpeechSubcategory2::X, conjugation: None, staircase: None },
-                prefix: None, particle: None, secondary_particle: None, particle_role: None, modifiers: Vec::new(), is_head: true
+                word: ProcToken { full: "".to_string(), base: "".to_string(), pos: PartOfSpeech::Symbol, sub1: PartOfSpeechSubcategory1::X, sub2: PartOfSpeechSubcategory2::X, conjugation: None, staircase: None, reading: None },
+                prefix: None, particle: None, secondary_particle: None, particle_role: None, secondary_particle_role: None, modifiers: Vec::new(), is_head: true
             },
             relation, connective, ending_particles
         };
@@ -573,7 +738,7 @@ fn assign_particle_roles(chunks: &mut Vec<Chunk>) {
     let mut iter = old_chunks.into_iter().peekable();
     
     while let Some(mut chunk) = iter.next() {
-        if chunk.word.pos == PartOfSpeech::Noun || chunk.word.pos == PartOfSpeech::Adverb || chunk.word.pos == PartOfSpeech::Verb || chunk.word.pos == PartOfSpeech::Adjective {
+        if chunk.word.pos == PartOfSpeech::Noun || chunk.word.pos == PartOfSpeech::Adverb || chunk.word.pos == PartOfSpeech::Verb || chunk.word.pos == PartOfSpeech::Adjective || chunk.word.full == "「" || chunk.word.full == "『" {
             if let Some(next_chunk) = iter.peek() {
                 let next_word = &next_chunk.word;
 
@@ -590,6 +755,7 @@ fn assign_particle_roles(chunks: &mut Vec<Chunk>) {
                    (next_word.sub1 == PartOfSpeechSubcategory1::MarkingParticle || 
                     next_word.sub1 == PartOfSpeechSubcategory1::LinkingParticle ||
                     next_word.sub1 == PartOfSpeechSubcategory1::CoordinatingParticle ||
+                    next_word.sub1 == PartOfSpeechSubcategory1::NormalizingParticle ||
                     (next_word.sub1 == PartOfSpeechSubcategory1::AdverbialParticle && 
                      (next_word.full == "まで" || next_word.full == "も" || next_word.full == "より" || 
                       next_word.full == "ぐらい" || next_word.full == "くらい" || 
@@ -599,6 +765,7 @@ fn assign_particle_roles(chunks: &mut Vec<Chunk>) {
                         "が" => Some(ParticleRole::Subject),
                         "を" => Some(ParticleRole::Object),
                         "は" => Some(ParticleRole::Topic),
+                        "の" => Some(ParticleRole::Modifier),
                         "に" if chunk.word.sub1 == PartOfSpeechSubcategory1::Adverbial => Some(ParticleRole::Adverbial),
                         "に" => Some(ParticleRole::Ambiguous(vec![
                             ParticleRole::IndirectObject, 
@@ -632,9 +799,19 @@ fn assign_particle_roles(chunks: &mut Vec<Chunk>) {
                             if nn_word.full == "は" || nn_word.full == "も" {
                                 chunk.secondary_particle = Some(nn_word.clone());
                                 
+                                if nn_word.full == "は" {
+                                    chunk.secondary_particle_role = Some(ParticleRole::Topic);
+                                } else if nn_word.full == "も" {
+                                    chunk.secondary_particle_role = Some(ParticleRole::Ambiguous(vec![
+                                        ParticleRole::Emphasis,
+                                        ParticleRole::Also,
+                                    ]));
+                                }
+                                
                                 // Special case for とは (Definition)
                                 if chunk.particle.as_ref().map(|p| p.full.as_str()) == Some("と") && nn_word.full == "は" {
                                     chunk.particle_role = Some(ParticleRole::Definition);
+                                    chunk.secondary_particle_role = None;
                                 }
                                 
                                 iter.next();
@@ -781,6 +958,7 @@ mod tests {
             "早く家に帰って読みたいです」と話していました。",
             "静かな公園を1時間ぐらい歩きながら、友達が好きな料理を食べたのに、彼女は急に家を出て行った",
             "3時ごろに店へ行く。3時ころに帰る。1時間くらい待つ。",
+            "天使と呼ばれる程の美貌を持った優秀な少女――椎名真昼と、特に目立つこともない普通の生徒である周は、隣人といえど今までもこれからも関わる事もないと、思っていた。",
             "としまえんの水上設置遊具による溺水事故とは、2019年（令和元年）8月15日に東京都練馬区に当時あった遊園地「としまえん」のプールにある、エア遊具タイプの水上設置遊具を備えたアトラクション「ふわふわウォーターランド」において、ライフジャケットを着用した女児が遊具下に浮いているのが見つかり、その後溺死した事故である。",
         ];
 
@@ -795,5 +973,125 @@ mod tests {
                 s.print();
             }
         }
+    }
+
+    #[test]
+    fn test_no_particle_modifier() {
+        let text = "藤宮周の住むマンションの隣には学校でも一番の人気を誇る愛らしい天使がいる";
+        let tokens = analyze_sentence(text);
+        let s = build_sentence(tokens).expect("Should build sentence");
+        s.print();
+        
+        // Find modifier chunks and verify 'の' has ParticleRole::Modifier
+        fn check_modifiers(chunk: &Chunk) {
+            if let Some(p) = &chunk.particle {
+                if p.full == "の" {
+                    assert_eq!(
+                        chunk.particle_role,
+                        Some(ParticleRole::Modifier),
+                        "Chunk '{}' with particle 'の' should have ParticleRole::Modifier",
+                        chunk.word.full
+                    );
+                }
+            }
+            for m in &chunk.modifiers {
+                match m {
+                    Modifier::NounChunk(c) | Modifier::AdjectiveChunk(c) | Modifier::Limitation(c) | Modifier::AdverbChunk(c) => {
+                        check_modifiers(c);
+                    }
+                    Modifier::Clause(clause) => {
+                        check_modifiers(&clause.predicate);
+                    }
+                    Modifier::Quotation(_) => {}
+                }
+            }
+        }
+
+        for clause in &s.clauses {
+            check_modifiers(&clause.predicate);
+        }
+    }
+
+    #[test]
+    fn test_secondary_particle_roles() {
+        let text = "学校でも隣には";
+        let tokens = analyze_sentence(text);
+        let s = build_sentence(tokens).expect("Should build sentence");
+        
+        let predicate = &s.clauses[0].predicate;
+        // Check modifiers of predicate for 学校でも and 隣には
+        for m in &predicate.modifiers {
+            if let Modifier::Limitation(chunk) | Modifier::NounChunk(chunk) = m {
+                if chunk.word.full == "学校" {
+                    assert_eq!(chunk.secondary_particle.as_ref().map(|p| p.full.as_str()), Some("も"));
+                    assert_eq!(
+                        chunk.secondary_particle_role,
+                        Some(ParticleRole::Ambiguous(vec![ParticleRole::Emphasis, ParticleRole::Also]))
+                    );
+                } else if chunk.word.full == "隣" {
+                    assert_eq!(chunk.secondary_particle.as_ref().map(|p| p.full.as_str()), Some("は"));
+                    assert_eq!(chunk.secondary_particle_role, Some(ParticleRole::Topic));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_proper_noun_name_merge() {
+        let text = "藤宮周の住むマンション";
+        let tokens = analyze_sentence(text);
+        let s = build_sentence(tokens).expect("Should build sentence");
+        
+        let predicate = &s.clauses[0].predicate;
+        // Check if 藤宮 and 周 were merged into a single 藤宮周 chunk
+        let mut found_merged_name = false;
+        for m in &predicate.modifiers {
+            if let Modifier::Clause(clause) = m {
+                for m2 in &clause.predicate.modifiers {
+                    if let Modifier::NounChunk(chunk) = m2 {
+                        if chunk.word.full == "藤宮周" {
+                            found_merged_name = true;
+                            assert_eq!(chunk.word.sub1, PartOfSpeechSubcategory1::ProperNoun);
+                        }
+                    }
+                }
+            }
+        }
+        assert!(found_merged_name, "藤宮 and 周 should be merged into a single '藤宮周' chunk");
+    }
+
+    #[test]
+    fn test_complex_sentence_structure_diagnosis() {
+        let text = "天使と呼ばれる程の美貌を持った優秀な少女――椎名真昼と、特に目立つこともない普通の生徒である周は、隣人といえど今までもこれからも関わる事もないと、思っていた。";
+        let tokens = analyze_sentence(text);
+        let s = build_sentence(tokens).expect("Should build sentence");
+        
+        println!("\n=== DIAGNOSTIC TREE FOR TARGET SENTENCE ===");
+        s.print();
+        
+        // Diagnostic checks:
+        // 1. Ensure "天使" is NOT isolated as a standalone Quotation clause at top
+        let first_clause_word = &s.clauses[0].predicate.word.full;
+        assert_ne!(first_clause_word, "天使", "天使 should not be isolated into its own clause box");
+        
+        // 2. Ensure "いえ" is NOT isolated as a Main clause
+        for clause in &s.clauses {
+            assert_ne!(clause.predicate.word.full, "いえ", "'いえ' should not be an independent predicate");
+        }
+    }
+
+    #[test]
+    fn test_bracketed_vs_unbracketed_quotation() {
+        // 1. Bracketed quote: 「早く帰りたい」と話していた
+        let text1 = "「早く帰りたい」と話していた。";
+        let s1 = build_sentence(analyze_sentence(text1)).expect("Should build sentence");
+        let has_nested_quote = s1.clauses[0].predicate.modifiers.iter().any(|m| matches!(m, Modifier::Quotation(_)));
+        assert!(has_nested_quote, "Bracketed quotation 「...」 should be nested inside a Modifier::Quotation");
+
+        // 2. Unbracketed quote: 関わる事もないと、思っていた
+        let text2 = "関わる事もないと、思っていた。";
+        let s2 = build_sentence(analyze_sentence(text2)).expect("Should build sentence");
+        assert_eq!(s2.clauses[0].relation, ClauseRelation::Quotation, "Unbracketed quote should form a sequential Quotation clause box");
+        assert_eq!(s2.clauses[1].relation, ClauseRelation::Main);
     }
 }

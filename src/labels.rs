@@ -296,7 +296,7 @@ pub static C_FORM_MAP: phf::Map<&'static str, CForms> = phf_map! {
 };
 
 //sentence.rs
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClauseRelation {
     Reason,       // から、ので (ConjunctiveParticle)
     Contrast,     // けど、が (ConjunctiveParticle)
@@ -408,6 +408,9 @@ pub enum ParticleRole {
     Scope,            // で
     Approximate,      // ぐらい
     Definition,       // とは
+    Modifier,         // の
+    Emphasis,         // も (scalar/emphatic focus, "even")
+    Quotation,        // と (quote content / citation)
     Ambiguous(Vec<ParticleRole>), // unresolved candidates, for LLM resolution later
 }
 
@@ -434,6 +437,9 @@ impl ParticleRole {
             Self::Scope,
             Self::Approximate,
             Self::Definition,
+            Self::Modifier,
+            Self::Emphasis,
+            Self::Quotation,
         ]
     }
 
@@ -459,6 +465,9 @@ impl ParticleRole {
             Self::Scope => "Scope",
             Self::Approximate => "Approximate",
             Self::Definition => "Definition",
+            Self::Modifier => "Modifier",
+            Self::Emphasis => "Emphasis",
+            Self::Quotation => "Quotation",
             Self::Ambiguous(_) => "Ambiguous",
         }
     }
@@ -485,6 +494,9 @@ impl ParticleRole {
             Self::Scope => "The scope or boundary of the action.",
             Self::Approximate => "An approximate amount or point.",
             Self::Definition => "Defines or explains the preceding term.",
+            Self::Modifier => "Links nouns or indicates possession.",
+            Self::Emphasis => "Adds scalar emphasis or unexpectedness ('even').",
+            Self::Quotation => "Marks quoted content or thought statement.",
             Self::Ambiguous(_) => "Cannot be determined by rule-based parsing alone.",
         }
     }
@@ -513,6 +525,9 @@ impl ParticleRole {
             "Scope" => Some(Self::Scope),
             "Approximate" => Some(Self::Approximate),
             "Definition" => Some(Self::Definition),
+            "Modifier" => Some(Self::Modifier),
+            "Emphasis" => Some(Self::Emphasis),
+            "Quotation" | "Quote" => Some(Self::Quotation),
             _ => None,
         }
     }
