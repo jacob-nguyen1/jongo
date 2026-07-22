@@ -358,7 +358,7 @@ impl ClauseRelation {
             Self::Contrast | Self::Concessive => "#e07000",
             Self::Conditional => "#40a040",
             Self::Continuation | Self::Sequence | Self::Simultaneous => "#008080",
-            Self::Main => "#000000",
+            Self::Main => "#555555",
             Self::Modifier => "#666666",
             Self::Quotation | Self::Evidential => "#7070a0",
             Self::Temporal | Self::Until => "#88aa44",
