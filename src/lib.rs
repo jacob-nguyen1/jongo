@@ -364,12 +364,12 @@ impl JongoController {
             "<style>\
              .jong-row{{cursor:pointer;border-radius:3px}}\
              .jong-row:hover{{background:#eef2f7}}\
-             .jong-drag-handle{{cursor:move;padding:6px 28px 6px 10px;background:#f0f0f0;border-bottom:1px solid #ddd;font-size:11px;color:#666;user-select:none;flex-shrink:0}}\
-             .jong-header-btn{{position:absolute;top:4px;background:#eee;color:#333;border:1px solid #ccc;border-radius:3px;cursor:pointer;padding:1px 6px;z-index:1;font-size:12px;line-height:1.4}}\
+             .jong-drag-handle{{cursor:move;height:28px;box-sizing:border-box;background:#f0f0f0;border-bottom:1px solid #ddd;user-select:none;flex-shrink:0}}\
+             .jong-header-btn{{position:absolute;top:4px;height:20px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;background:#eee;color:#333;border:1px solid #ccc;border-radius:3px;cursor:pointer;padding:0 7px;z-index:1;font-size:12px;line-height:1}}\
              .jong-header-btn:hover{{background:#ddd}}\
-             .jong-close{{right:4px;background:red;color:white;border:none}}\
-             .jong-settings{{right:30px}}\
-             .jong-legend{{right:56px}}\
+             .jong-close{{right:6px;background:red;color:white;border:none}}\
+             .jong-settings{{right:34px}}\
+             .jong-legend{{right:62px}}\
              .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box;overflow:hidden}}\
              .jong-structure-scroll{{direction:rtl;overflow-y:auto;flex:1;min-width:0;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8;margin:0;user-select:none}}\
              .jong-structure-scroll::-webkit-scrollbar{{width:5px}}\
@@ -430,7 +430,7 @@ impl JongoController {
              [data-jong-dark=\"1\"] .jong-slider{{background:#666}}\
              [data-jong-dark=\"1\"] .resolved-badge{{border-color:#6c6 !important;color:#8d8 !important}}\
              </style>\
-             <div class='jong-drag-handle' style='height:8px'></div>\
+             <div class='jong-drag-handle'></div>\
              <button class='jong-header-btn jong-legend' title='Legend'>?</button>\
              <button class='jong-header-btn jong-settings' title='Settings'>⚙</button>\
              <button class='jong-header-btn jong-close' title='Close'>✕</button>\
