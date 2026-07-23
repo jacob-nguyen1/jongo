@@ -374,6 +374,8 @@ impl JongoController {
 
         let html = format!(
             "<style>\
+             /* Dark-mode global override: force solid black UI when data-jong-dark is set */\
+             [data-jong-dark=\"1\"] * {{ background: #000 !important; color: #fff !important; border-color: #111 !important; }}\
              .jong-row{{cursor:pointer;border-radius:3px;white-space:nowrap}}\
              .jong-row:hover{{background:#eef2f7}}\
              .jong-row-selected{{background:#dbeafe}}\
@@ -1253,7 +1255,7 @@ fn render_clause(clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
         let id = chunk_data.len();
         chunk_data.push((conn.clone(), None, None, None, None));
         html.push_str(&format!(
-            "<div class='jong-row' data-chunk-id='{id}' style='margin-top:6px;font-size:14px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
+            "<div class='jong-row' data-chunk-id='{id}' style='margin-top:6px;font-size:14px;font-weight:600;color:{color};padding:6px 4px'>{}</div>",
             conn.full
         ));
     }
@@ -1325,7 +1327,134 @@ fn has_kanji(s: &str) -> bool {
     s.chars().any(|c| matches!(c, '\u{4e00}'..='\u{9faf}' | '\u{3400}'..='\u{4dbf}'))
 }
 
+fn has_kana(s: &str) -> bool {
+    s.chars().any(|c| ('\u{3040}'..='\u{30ff}').contains(&c))
+}
+
+fn is_kanji(c: char) -> bool {
+    matches!(c, '\u{4e00}'..='\u{9faf}' | '\u{3400}'..='\u{4dbf}')
+}
+
+fn base_reading_for_furigana(word: &ProcToken) -> Option<String> {
+    // Prefer token reading (inflected / context-aware) when available, otherwise consult dictionary base reading.
+    if let Some(r) = &word.reading {
+        let h = katakana_to_hiragana(r);
+        if !h.is_empty() {
+            return Some(h);
+        }
+    }
+
+    let is_proper_noun = word.sub1 == crate::labels::PartOfSpeechSubcategory1::ProperNoun;
+    if let Some(hit) = crate::jmdict::lookup_first_result(&word.base, word.pos, is_proper_noun) {
+        if !hit.kana.is_empty() {
+            return Some(katakana_to_hiragana(&hit.kana));
+        }
+    }
+    None
+}
+
+fn strip_common_ending(mut s: String) -> String {
+    // Unicode-safe removal of common dictionary endings to approximate verb/adjective stems
+    // Prefer using strip_suffix so we don't slice by byte counts.
+    if let Some(rest) = s.strip_suffix('る') {
+        return rest.to_string();
+    }
+    if let Some(rest) = s.strip_suffix("ます") {
+        return rest.to_string();
+    }
+    if let Some(rest) = s.strip_suffix('た') {
+        return rest.to_string();
+    }
+    if let Some(rest) = s.strip_suffix('だ') {
+        return rest.to_string();
+    }
+    s
+}
+
 fn format_word_html(word: &ProcToken, enable_furigana: bool) -> String {
+    // Improved furigana heuristics:
+    // - If the surface contains kanji, try to compute a kanji-only furigana from the base reading (dictionary first),
+    //   stripping a common dictionary ending to get the stem (e.g., 食べる -> たべ).
+    // - Render ruby only over the kanji characters with that stem reading to avoid misaligned okurigana.
+
+    if enable_furigana && has_kanji(&word.full) {
+        // Build the kanji-only surface
+        let kanji_only: String = word.full.chars().filter(|&c| is_kanji(c)).collect();
+        if !kanji_only.is_empty() {
+            // First, prefer the token's actual reading (inflected form) and subtract the surface suffix when possible.
+            if let Some(r) = &word.reading {
+                let h_reading = katakana_to_hiragana(r);
+                // Find first kana index in surface (okurigana / inflectional kana)
+                let first_kana_idx = word.full.chars().position(|c| !is_kanji(c));
+                if let Some(idx) = first_kana_idx {
+                    // Build suffix (surface tail from first kana to end) in hiragana
+                    let suffix: String = word.full.chars().skip(idx).collect();
+                    let suffix_hira = suffix.chars().map(|c| {
+                        if ('\u{30a1}'..='\u{30f6}').contains(&c) {
+                            // Katakana -> hiragana
+                            char::from_u32(c as u32 - 0x60).unwrap_or(c)
+                        } else {
+                            c
+                        }
+                    }).collect::<String>();
+                    // Unicode-safe split: compare by characters rather than bytes
+                    let h_chars: Vec<char> = h_reading.chars().collect();
+                    let suffix_hira_chars: Vec<char> = suffix_hira.chars().collect();
+                    if h_chars.len() > suffix_hira_chars.len() {
+                        // check if h_chars ends with suffix_hira_chars
+                        let mut matches = true;
+                        for i in 0..suffix_hira_chars.len() {
+                            if h_chars[h_chars.len() - suffix_hira_chars.len() + i] != suffix_hira_chars[i] {
+                                matches = false;
+                                break;
+                            }
+                        }
+                        if matches {
+                            let kanji_reading_chars = &h_chars[..(h_chars.len() - suffix_hira_chars.len())];
+                            let kanji_reading: String = kanji_reading_chars.iter().collect();
+                            if !kanji_reading.is_empty() {
+                                let suffix_surface: String = word.full.chars().filter(|&c| !is_kanji(c)).collect();
+                                return format!("<ruby>{}<rt>{}</rt></ruby>{}", html_escape(&kanji_only), html_escape(&kanji_reading), html_escape(&suffix_surface));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Next, fall back to dictionary base reading; derive a stem by stripping common endings.
+            if let Some(mut base_reading) = base_reading_for_furigana(word) {
+                let stem = strip_common_ending(base_reading.clone());
+                if !stem.is_empty() {
+                    let suffix_surface: String = word.full.chars().filter(|&c| !is_kanji(c)).collect();
+                    // convert suffix to hiragana for overlap detection
+                    let suffix_hira: String = suffix_surface.chars().map(|c| {
+                        if ('\u{30a1}'..='\u{30f6}').contains(&c) {
+                            char::from_u32(c as u32 - 0x60).unwrap_or(c)
+                        } else {
+                            c
+                        }
+                    }).collect();
+                    // compute overlap between stem (kanji reading) and prefix of suffix_hira
+                    let stem_chars: Vec<char> = stem.chars().collect();
+                    let suffix_hira_chars: Vec<char> = suffix_hira.chars().collect();
+                    let mut overlap = 0usize;
+                    let max_k = std::cmp::min(stem_chars.len(), suffix_hira_chars.len());
+                    for k in (1..=max_k).rev() {
+                        let stem_tail: String = stem_chars[stem_chars.len()-k..].iter().collect();
+                        let suffix_head: String = suffix_hira_chars[..k].iter().collect();
+                        if stem_tail == suffix_head {
+                            overlap = k;
+                            break;
+                        }
+                    }
+                    let suffix_display: String = suffix_surface.chars().skip(overlap).collect();
+                    return format!("<ruby>{}<rt>{}</rt></ruby>{}", html_escape(&kanji_only), html_escape(&stem), html_escape(&suffix_surface));
+                }
+            }
+        }
+    }
+
+    // Default behavior: if full has kanji and reading exists and reading != full, render full ruby
     if enable_furigana && has_kanji(&word.full) {
         if let Some(r) = &word.reading {
             let h_reading = katakana_to_hiragana(r);
@@ -1334,6 +1463,7 @@ fn format_word_html(word: &ProcToken, enable_furigana: bool) -> String {
             }
         }
     }
+
     word.full.clone()
 }
 
@@ -1508,18 +1638,16 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, secondary_parti
                 );
                 for c in candidates {
                     html.push_str(&format!(
-                        "<li><strong>{}</strong> — {}</li>",
+                        "<li><strong>{}</strong></li>",
                         c.badge(),
-                        c.explanation()
                     ));
                 }
                 html.push_str("</ul>");
             }
             Some(r) => {
                 html.push_str(&format!(
-                    "<div><strong>Role:</strong> {} — {}</div>",
-                    r.badge(),
-                    r.explanation()
+                    "<div><strong>Role:</strong> {}</div>",
+                    r.badge()
                 ));
             }
             None => {
@@ -1634,4 +1762,55 @@ fn map_offset_to_node(text_nodes: &[web_sys::Node], mut target_offset: usize) ->
         target_offset -= len;
     }
     None
+}
+
+// Expose a test-only wrapper so integration tests can call the internal formatter
+pub fn test_format_word_html(word: &crate::grammar::ProcToken, enable: bool) -> String {
+    format_word_html(word, enable)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grammar::ProcToken;
+    use crate::labels::{PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2};
+
+    fn make_token(full: &str, base: &str, reading: Option<&str>, pos: PartOfSpeech, sub1: PartOfSpeechSubcategory1) -> ProcToken {
+        ProcToken {
+            full: full.to_string(),
+            base: base.to_string(),
+            pos,
+            sub1,
+            sub2: PartOfSpeechSubcategory2::X,
+            conjugation: None,
+            staircase: None,
+            reading: reading.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn furigana_tabe_ta() {
+        // 食べた -> expect ruby 'た' over 食 and visible 'べた'
+        let tok = make_token("食べた", "食べる", Some("タベタ"), PartOfSpeech::Verb, PartOfSpeechSubcategory1::Unbound);
+        let out = format_word_html(&tok, true);
+        assert!(out.contains("<ruby>食<rt>た</rt></ruby>"), "unexpected output: {}", out);
+        assert!(out.contains("べた"), "suffix missing: {}", out);
+    }
+
+    #[test]
+    fn furigana_warau_wara() {
+        // 笑った -> expect ruby 'わら' over 笑, visible 'った'
+        let tok = make_token("笑った", "笑う", Some("ワラッタ"), PartOfSpeech::Verb, PartOfSpeechSubcategory1::Unbound);
+        let out = format_word_html(&tok, true);
+        assert!(out.contains("<ruby>笑<rt>わら</rt></ruby>"), "unexpected output: {}", out);
+        assert!(out.contains("った"), "suffix missing: {}", out);
+    }
+
+    #[test]
+    fn furigana_hito_for_person() {
+        // 人 -> expect 'ひと'
+        let tok = make_token("人", "人", Some("ヒト"), PartOfSpeech::Noun, PartOfSpeechSubcategory1::Unbound);
+        let out = format_word_html(&tok, true);
+        assert!(out.contains("<ruby>人<rt>ひと</rt></ruby>"), "unexpected output: {}", out);
+    }
 }

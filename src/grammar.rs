@@ -602,7 +602,7 @@ mod tests {
             let tokens = analyze_sentence(sentence);
             for t in &tokens {
                 println!(
-                    "  {}, base={}, pos={:?}, sub1={:?}, sub2={:?}, conj={}",
+                    "  {}, base={}, pos={:?}, sub1={:?}, sub2={:?}, conj={:?}",
                     t.full, t.base, t.pos, t.sub1, t.sub2, t.verb_print()
                 );
             }
