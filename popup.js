@@ -6,6 +6,7 @@ const settingsView = document.getElementById("settings-view");
 const settingsBack = document.getElementById("settings-back");
 const darkToggle = document.getElementById("dark-toggle");
 const furiganaToggle = document.getElementById("furigana-toggle");
+const tooltipToggle = document.getElementById("tooltip-toggle");
 const aiSetupBtn = document.getElementById("ai-setup-btn");
 const aiConfig = document.getElementById("ai-config");
 const llmUrlInput = document.getElementById("llm-url");
@@ -65,6 +66,10 @@ furiganaToggle.addEventListener("change", async () => {
   await chrome.storage.local.set({ furigana: furiganaToggle.checked });
 });
 
+tooltipToggle.addEventListener("change", async () => {
+  await chrome.storage.local.set({ tooltips: tooltipToggle.checked });
+});
+
 aiSetupBtn.addEventListener("click", () => {
   const open = aiConfig.classList.toggle("hidden");
   aiSetupBtn.classList.toggle("open", !open);
@@ -86,6 +91,7 @@ saveBtn.addEventListener("click", async () => {
     "enabled",
     "darkMode",
     "furigana",
+    "tooltips",
     "llmUrl",
     "llmKey",
   ]);
@@ -94,6 +100,7 @@ saveBtn.addEventListener("click", async () => {
   darkToggle.checked = dark;
   applyDarkMode(dark);
   furiganaToggle.checked = data.furigana !== false;
+  tooltipToggle.checked = data.tooltips !== false;
   if (data.llmUrl) llmUrlInput.value = data.llmUrl;
   if (data.llmKey) llmKeyInput.value = data.llmKey;
 

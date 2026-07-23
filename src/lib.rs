@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::console;
 
-use crate::labels::{ClauseRelation, PartOfSpeechSubcategory1, ParticleRole};
+use crate::labels::{ClauseRelation, PartOfSpeech, PartOfSpeechSubcategory1, ParticleRole};
 use crate::grammar::ProcToken;
 use crate::sentence::{Chunk, Clause, Modifier, Sentence};
 
@@ -190,15 +190,32 @@ fn scaled_font_px(base: u32, tier: &str) -> u32 {
         "title" | "detail-sub" => 0.8125,
         "detail" => 0.75,
         "detail-xs" => 0.6875,
+        "section-label" | "badge" => 0.5,
+        "reading" | "clause-label" | "connective" => 0.55,
         _ => 1.0,
     };
     ((base as f32 * factor).round() as u32).max(8)
+}
+
+fn pos_badge_class(pos: PartOfSpeech) -> &'static str {
+    match pos {
+        PartOfSpeech::Noun => "jong-pos-noun",
+        PartOfSpeech::Verb => "jong-pos-verb",
+        PartOfSpeech::Adjective | PartOfSpeech::AdnominalAdjective => "jong-pos-adj",
+        PartOfSpeech::Adverb => "jong-pos-adv",
+        PartOfSpeech::AuxiliaryVerb => "jong-pos-aux",
+        PartOfSpeech::Particle => "jong-pos-part",
+        PartOfSpeech::Conjunction => "jong-pos-conj",
+        PartOfSpeech::Interjection => "jong-pos-interj",
+        _ => "jong-pos-neutral",
+    }
 }
 
 #[derive(Clone, Copy)]
 struct RenderContext {
     font_size: u32,
     furigana: bool,
+    tooltips: bool,
 }
 
 impl Default for RenderContext {
@@ -206,6 +223,7 @@ impl Default for RenderContext {
         Self {
             font_size: DEFAULT_FONT_SIZE,
             furigana: true,
+            tooltips: true,
         }
     }
 }
@@ -216,11 +234,62 @@ fn render_context_from_controller() -> RenderContext {
             RenderContext {
                 font_size: b.font_size,
                 furigana: b.furigana,
+                tooltips: b.tooltips,
             }
         } else {
             RenderContext::default()
         }
     })
+}
+
+fn tip_attrs(ctx: &RenderContext, tip: &str) -> String {
+    let escaped = html_escape(tip);
+    if ctx.tooltips {
+        format!(" data-tip=\"{escaped}\" title=\"{escaped}\"")
+    } else {
+        format!(" data-tip=\"{escaped}\"")
+    }
+}
+
+fn conjugation_explanation(label: &str) -> &'static str {
+    match label {
+        "Negative" => "Negates the action or state (〜ない).",
+        "Past" => "Marks completed or past tense (〜た / 〜だ).",
+        "Continuous" => "Ongoing or resulting state (〜ている).",
+        "Te-form" => "Connective form used for sequences and requests (〜て).",
+        "Desiderative" => "Expresses desire to do something (〜たい).",
+        "Volitional" => "Expresses intention or suggestion (〜よう / 〜う).",
+        "Potential" => "Ability or possibility (〜られる / できる).",
+        "Causative" => "Making or letting someone do something (〜させる).",
+        "Conditional" => "If / when condition (〜ば / 〜たら).",
+        "Negative-imperative" => "Command not to do something (〜な).",
+        _ => "",
+    }
+}
+
+fn role_tip(role: &ParticleRole) -> String {
+    match role {
+        ParticleRole::Ambiguous(candidates) => candidates
+            .iter()
+            .map(|c| format!("{}: {}", c.badge(), c.explanation()))
+            .collect::<Vec<_>>()
+            .join(" | "),
+        _ => role.explanation().to_string(),
+    }
+}
+
+fn push_verb_badges(html: &mut String, ctx: &RenderContext, word: &ProcToken) {
+    let badge_px = scaled_font_px(ctx.font_size, "badge");
+    if let Some(tag) = word.verb_print() {
+        for label in tag.split(", ") {
+            let tip = conjugation_explanation(label);
+            html.push_str(&format!(
+                " <span class='jong-verb-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                tip_attrs(ctx, tip),
+                html_escape(label)
+            ));
+        }
+    }
 }
 
 fn html_escape(s: &str) -> String {
@@ -266,6 +335,7 @@ struct JongoController {
     enabled: bool,
     dark_mode: bool,
     furigana: bool,
+    tooltips: bool,
     font_size: u32,
     prompt: Option<web_sys::HtmlElement>,
     analyses: Vec<AnalysisWindow>,
@@ -281,6 +351,7 @@ impl JongoController {
             enabled: true,
             dark_mode: false,
             furigana: true,
+            tooltips: true,
             font_size: DEFAULT_FONT_SIZE,
             prompt: None,
             analyses: Vec::new(),
@@ -318,6 +389,23 @@ impl JongoController {
                 let tier = el.get_attribute("data-font-tier").unwrap_or_default();
                 let size = scaled_font_px(base, &tier);
                 let _ = el.style().set_property("font-size", &format!("{size}px"));
+            }
+        }
+    }
+
+    fn apply_tooltips_all(&self) {
+        for a in &self.analyses {
+            let Ok(nodes) = a.element.query_selector_all("[data-tip]") else { continue };
+            for i in 0..nodes.length() {
+                let Some(node) = nodes.item(i) else { continue };
+                let Ok(el) = node.dyn_into::<web_sys::Element>() else { continue };
+                if self.tooltips {
+                    if let Some(tip) = el.get_attribute("data-tip") {
+                        let _ = el.set_attribute("title", &tip);
+                    }
+                } else {
+                    let _ = el.remove_attribute("title");
+                }
             }
         }
     }
@@ -515,6 +603,7 @@ impl JongoController {
         let ctx = RenderContext {
             font_size: self.font_size,
             furigana: self.furigana,
+            tooltips: self.tooltips,
         };
         let left = crate::sentence::build_sentence(tokens)
             .map(|s| render_structure(&ctx, &s, sentence, &mut chunk_data))
@@ -543,10 +632,11 @@ impl JongoController {
              .jong-close{{background:#fef2f2;color:#ef4444;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
              .jong-close:hover{{background:#fee2e2;color:#dc2626}}\
              .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box;overflow:hidden}}\
-             .jong-structure-scroll{{direction:rtl;overflow-y:auto;overflow-x:hidden;flex:1;min-width:0;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8;margin:0;user-select:none}}\
-             .jong-structure-scroll::-webkit-scrollbar{{width:5px;height:5px}}\
-             .jong-structure-scroll::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
-             .jong-structure-scroll::-webkit-scrollbar-track{{background:#e8e8e8}}\
+             .jong-structure-scroll,.jong-detail,.jong-panel,.jong-def-box,.jong-staircase-box,.jong-tree-scroll-wrapper{{scrollbar-width:thin;scrollbar-color:#444 #e8e8e8}}\
+             .jong-structure-scroll::-webkit-scrollbar,.jong-detail::-webkit-scrollbar,.jong-panel::-webkit-scrollbar,.jong-def-box::-webkit-scrollbar,.jong-staircase-box::-webkit-scrollbar,.jong-tree-scroll-wrapper::-webkit-scrollbar{{width:5px;height:5px}}\
+             .jong-structure-scroll::-webkit-scrollbar-thumb,.jong-detail::-webkit-scrollbar-thumb,.jong-panel::-webkit-scrollbar-thumb,.jong-def-box::-webkit-scrollbar-thumb,.jong-staircase-box::-webkit-scrollbar-thumb,.jong-tree-scroll-wrapper::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
+             .jong-structure-scroll::-webkit-scrollbar-track,.jong-detail::-webkit-scrollbar-track,.jong-panel::-webkit-scrollbar-track,.jong-def-box::-webkit-scrollbar-track,.jong-staircase-box::-webkit-scrollbar-track,.jong-tree-scroll-wrapper::-webkit-scrollbar-track{{background:#e8e8e8}}\
+             .jong-structure-scroll{{direction:rtl;overflow-y:auto;overflow-x:hidden;flex:1;min-width:0;margin:0;user-select:none}}\
              .jong-structure-inner{{direction:ltr;padding:0 8px 0 6px}}\
              .jong-detail{{flex:1;min-width:0;overflow-y:auto;border-left:1px solid #ddd;padding-left:12px;position:relative}}\
              .jong-muted{{color:#444}}\
@@ -554,25 +644,51 @@ impl JongoController {
              .jong-word-head{{font-weight:600;color:#111}}\
              .jong-word-mod{{font-weight:500;color:#111}}\
              .jong-tree-arm{{font-family:monospace;white-space:pre;color:#666}}\
-             .jong-role-badge{{font-size:10px;color:#666;border:1px solid #ccc;border-radius:3px;padding:0 4px}}\
+             .jong-role-badge{{color:#666;border:1px solid #ccc;border-radius:999px;padding:2px 8px}}\
              .ambiguous-badge{{color:#b45309 !important;border-color:#f59e0b !important;background:#fffbeb !important;font-weight:600}}\
              .resolved-badge{{color:#15803d !important;border-color:#22c55e !important;background:#f0fdf4 !important;font-weight:600}}\
-             .jong-verb-badge{{font-size:10px;color:#0369a1;border:1px solid #0ea5e9;background:#f0f9ff;border-radius:3px;padding:0 4px;font-weight:600}}\
+             .jong-verb-badge{{color:#0369a1;border:1px solid #0ea5e9;background:#f0f9ff;border-radius:999px;padding:2px 8px;font-weight:600}}\
              .refine-ai-btn{{background:#f0f0f0;border:1px solid #ccc;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;color:#333;font-weight:500;flex-shrink:0}}\
              .jong-def-box{{max-height:150px;overflow-y:auto;background:#fafafa;border:1px solid #eee;border-radius:4px;padding:8px 8px 8px 24px;margin-top:2px}}\
              .jong-def-box ol{{margin:0;padding:0;color:#333}}\
+             .jong-card-header{{margin-bottom:2px}}\
+             .jong-card-reading{{color:#888;line-height:1.2;margin-bottom:2px}}\
+             .jong-card-headword-row{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}\
+             .jong-card-headword{{font-weight:700;color:#111;line-height:1.2}}\
+             .jong-card-base{{color:#888;margin-top:4px}}\
+             .jong-pos-badge{{font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-radius:999px;padding:2px 8px;flex-shrink:0;border:1px solid transparent}}\
+             .jong-pos-noun{{color:#4338ca;background:#eef2ff;border-color:#c7d2fe}}\
+             .jong-pos-verb{{color:#be123c;background:#fff1f2;border-color:#fecdd3}}\
+             .jong-pos-adj{{color:#7e22ce;background:#faf5ff;border-color:#e9d5ff}}\
+             .jong-pos-adv{{color:#a21caf;background:#fdf4ff;border-color:#f5d0fe}}\
+             .jong-pos-aux{{color:#6d28d9;background:#f5f3ff;border-color:#ddd6fe}}\
+             .jong-pos-part{{color:#475569;background:#f8fafc;border-color:#cbd5e1}}\
+             .jong-pos-conj{{color:#57534e;background:#fafaf9;border-color:#d6d3d1}}\
+             .jong-pos-interj{{color:#db2777;background:#fdf2f8;border-color:#fbcfe8}}\
+             .jong-pos-neutral{{color:#6b7280;background:#f9fafb;border-color:#e5e7eb}}\
+             .jong-section-label{{font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#888;margin:0 0 6px}}\
+             .jong-card-divider{{border:none;border-top:1px solid #eee;margin:10px 0}}\
+             .jong-def-list{{list-style:none;margin:0;padding:0}}\
+             .jong-def-item{{padding:4px 0 4px 10px;margin-bottom:2px;color:#555;border-left:2px solid transparent;line-height:1.4}}\
+             .jong-def-item.selected{{font-weight:700;color:#111;border-left-color:#22c55e}}\
+             .jong-def-toggle{{margin-top:6px;text-align:center}}\
+             .jong-def-toggle button{{background:none;border:none;color:#4a9;cursor:pointer;text-decoration:underline;font-size:inherit;padding:0}}\
+             .jong-particle-row{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}\
+             .jong-particle-chip{{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:2px 8px;border:1px solid #ddd;border-radius:6px;font-weight:600;background:#fafafa}}\
+             .jong-tag-row{{display:flex;flex-wrap:wrap;gap:6px}}\
+             .jong-tree-scroll-wrapper{{overflow-x:auto;padding-bottom:8px}}\
+             .jong-staircase-box{{max-height:150px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:8px;margin-top:4px;background:#fafafa}}\
+             .jong-staircase-step{{margin-bottom:4px;line-height:1.4}}\
+             .jong-no-entry{{color:#888;font-style:italic;margin-top:4px}}\
              .jong-detail-section{{border-top:1px solid #eee}}\
              .jong-accordion{{border:1px solid #e0e0e0;border-radius:6px;margin-bottom:6px;overflow:hidden}}\
              .jong-accordion summary{{cursor:pointer;padding:6px 10px;font-size:13px;font-weight:600;background:#f8f9fa;list-style:none;display:flex;align-items:center;gap:6px;user-select:none}}\
              .jong-accordion summary::-webkit-details-marker{{display:none}}\
              .jong-accordion summary::before{{content:'▶';font-size:9px;transition:transform 0.15s;display:inline-block}}\
              .jong-accordion[open] summary::before{{transform:rotate(90deg)}}\
-             .jong-accordion-body{{padding:6px 10px;font-size:12px;line-height:1.6}}\
+             .jong-accordion-body{{padding:10px 12px;font-size:12px;line-height:1.6}}\
              .jong-accordion-highlight{{border-color:#3b82f6;box-shadow:0 0 0 1px #3b82f6}}\
-             .jong-panel{{flex:1;min-width:0;min-height:0;overflow-y:auto;padding:4px 12px 12px;font-size:12px;line-height:1.5;box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#444 #e8e8e8}}\
-             .jong-panel::-webkit-scrollbar{{width:5px}}\
-             .jong-panel::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
-             .jong-panel::-webkit-scrollbar-track{{background:#e8e8e8}}\
+             .jong-panel{{flex:1;min-width:0;min-height:0;overflow-y:auto;padding:4px 12px 12px;font-size:12px;line-height:1.5;box-sizing:border-box}}\
              .jong-panel-section{{margin-top:14px}}\
              .jong-panel-section h3{{font-size:13px;margin:0 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}}\
              .jong-legend-row{{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}}\
@@ -598,16 +714,33 @@ impl JongoController {
              [data-jong-dark=\"1\"] .refine-ai-btn{{background:#4a4a4a;border-color:#777;color:#e0e0e0}}\
              [data-jong-dark=\"1\"] .jong-def-box{{background:#333;border-color:#555}}\
              [data-jong-dark=\"1\"] .jong-def-box ol{{color:#e0e0e0}}\
+             [data-jong-dark=\"1\"] .jong-card-reading{{color:#aaa}}\
+             [data-jong-dark=\"1\"] .jong-card-headword{{color:#f0f0f0}}\
+             [data-jong-dark=\"1\"] .jong-card-base{{color:#aaa}}\
+             [data-jong-dark=\"1\"] .jong-pos-noun{{color:#a5b4fc;background:#1e1b4b;border-color:#4338ca}}\
+             [data-jong-dark=\"1\"] .jong-pos-verb{{color:#fda4af;background:#4c0519;border-color:#be123c}}\
+             [data-jong-dark=\"1\"] .jong-pos-adj{{color:#d8b4fe;background:#3b0764;border-color:#7e22ce}}\
+             [data-jong-dark=\"1\"] .jong-pos-adv{{color:#f0abfc;background:#4a044e;border-color:#a21caf}}\
+             [data-jong-dark=\"1\"] .jong-pos-aux{{color:#c4b5fd;background:#2e1065;border-color:#6d28d9}}\
+             [data-jong-dark=\"1\"] .jong-pos-part{{color:#cbd5e1;background:#1e293b;border-color:#475569}}\
+             [data-jong-dark=\"1\"] .jong-pos-conj{{color:#d6d3d1;background:#292524;border-color:#57534e}}\
+             [data-jong-dark=\"1\"] .jong-pos-interj{{color:#f9a8d4;background:#500724;border-color:#db2777}}\
+             [data-jong-dark=\"1\"] .jong-pos-neutral{{color:#d1d5db;background:#374151;border-color:#6b7280}}\
+             [data-jong-dark=\"1\"] .jong-section-label{{color:#aaa}}\
+             [data-jong-dark=\"1\"] .jong-card-divider{{border-top-color:#555}}\
+             [data-jong-dark=\"1\"] .jong-def-item{{color:#bbb;border-left-color:transparent}}\
+             [data-jong-dark=\"1\"] .jong-def-item.selected{{color:#f0f0f0;border-left-color:#4ade80}}\
+             [data-jong-dark=\"1\"] .jong-def-toggle button{{color:#6ee7b7}}\
+             [data-jong-dark=\"1\"] .jong-particle-chip{{background:#3a3a3a;border-color:#666;color:#e0e0e0}}\
+             [data-jong-dark=\"1\"] .jong-staircase-box{{background:#333;border-color:#555;color:#e0e0e0}}\
+             [data-jong-dark=\"1\"] .jong-no-entry{{color:#aaa}}\
              [data-jong-dark=\"1\"] .jong-detail-section{{border-top-color:#555}}\
              [data-jong-dark=\"1\"] .jong-accordion{{border-color:#555}}\
              [data-jong-dark=\"1\"] .jong-accordion summary{{background:#3a3a3a;color:#e0e0e0}}\
              [data-jong-dark=\"1\"] .jong-accordion-highlight{{border-color:#60a5fa;box-shadow:0 0 0 1px #60a5fa}}\
-             [data-jong-dark=\"1\"] .jong-structure-scroll{{scrollbar-color:#888 #333}}\
-             [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-thumb{{background:#888}}\
-             [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-track{{background:#333}}\
-             [data-jong-dark=\"1\"] .jong-panel{{scrollbar-color:#888 #333}}\
-             [data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-thumb{{background:#888}}\
-             [data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-track{{background:#333}}\
+             [data-jong-dark=\"1\"] .jong-structure-scroll,[data-jong-dark=\"1\"] .jong-detail,[data-jong-dark=\"1\"] .jong-panel,[data-jong-dark=\"1\"] .jong-def-box,[data-jong-dark=\"1\"] .jong-staircase-box,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper{{scrollbar-color:#888 #333}}\
+             [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-detail::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-def-box::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-staircase-box::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper::-webkit-scrollbar-thumb{{background:#888}}\
+             [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-detail::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-def-box::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-staircase-box::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper::-webkit-scrollbar-track{{background:#333}}\
              [data-jong-dark=\"1\"] .jong-panel-section h3{{border-bottom-color:#666}}\
              [data-jong-dark=\"1\"] .jong-legend-badge{{border-color:#777;color:#ddd}}\
              [data-jong-dark=\"1\"] .ambiguous-badge{{color:#fbbf24 !important;border-color:#d97706 !important;background:#451a03 !important}}\
@@ -1129,6 +1262,16 @@ pub fn set_furigana(on: bool) {
 }
 
 #[wasm_bindgen]
+pub fn set_tooltips(on: bool) {
+    CONTROLLER.with(|c| {
+        if let Ok(mut ctrl) = c.try_borrow_mut() {
+            ctrl.tooltips = on;
+            ctrl.apply_tooltips_all();
+        }
+    });
+}
+
+#[wasm_bindgen]
 pub fn set_font_size(size: u32) {
     CONTROLLER.with(|c| {
         if let Ok(mut ctrl) = c.try_borrow_mut() {
@@ -1237,7 +1380,7 @@ fn render_structure(ctx: &RenderContext, sentence: &Sentence, sentence_str: &str
          <button class='refine-ai-btn'>Disambiguate</button></div>"
     ));
 
-    html.push_str("<div class='jong-tree-scroll-wrapper' style='overflow-x:auto; padding-bottom: 8px;'>");
+    html.push_str("<div class='jong-tree-scroll-wrapper'>");
     html.push_str("<div class='jong-tree-container' style='display:flex;flex-direction:column;width:max-content;min-width:100%'>");
     for clause in &sentence.clauses {
         html.push_str(&render_clause(ctx, clause, chunk_data));
@@ -1283,24 +1426,25 @@ fn render_legend_panel() -> String {
     html.push_str("</div>");
 
     html.push_str("<div class='jong-panel-section'><h3>Verb conjugations</h3>");
-    const CONJUGATIONS: &[(&str, &str)] = &[
-        ("Negative", "Negates the action or state (〜ない)."),
-        ("Past", "Marks completed or past tense (〜た / 〜だ)."),
-        ("Continuous", "Ongoing or resulting state (〜ている)."),
-        ("Te-form", "Connective form used for sequences and requests (〜て)."),
-        ("Desiderative", "Expresses desire to do something (〜たい)."),
-        ("Volitional", "Expresses intention or suggestion (〜よう / 〜う)."),
-        ("Potential", "Ability or possibility (〜られる / できる)."),
-        ("Causative", "Making or letting someone do something (〜させる)."),
-        ("Conditional", "If / when condition (〜ば / 〜たら)."),
-        ("Negative-imperative", "Command not to do something (〜な)."),
+    const CONJUGATIONS: &[&str] = &[
+        "Negative",
+        "Past",
+        "Continuous",
+        "Te-form",
+        "Desiderative",
+        "Volitional",
+        "Potential",
+        "Causative",
+        "Conditional",
+        "Negative-imperative",
     ];
-    for (label, explanation) in CONJUGATIONS {
+    for label in CONJUGATIONS {
         html.push_str(&format!(
             "<div class='jong-legend-row'>\
                <span class='jong-legend-badge'>{label}</span>\
-               <span>{explanation}</span>\
-             </div>"
+               <span>{}</span>\
+             </div>",
+            conjugation_explanation(label)
         ));
     }
     html.push_str("</div></div>");
@@ -1310,16 +1454,20 @@ fn render_legend_panel() -> String {
 fn render_clause(ctx: &RenderContext, clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
     let color = clause.relation.color();
     let label = clause.relation.label();
+    let tip = clause.relation.explanation();
+    let label_px = scaled_font_px(ctx.font_size, "clause-label");
+    let conn_px = scaled_font_px(ctx.font_size, "connective");
     let mut html = format!(
         "<div style='border:1px solid {color};border-radius:4px;margin-bottom:10px;padding:6px 8px'>\
-         <div style='font-size:11px;color:{color};margin-bottom:6px'>{label}</div>"
+         <div data-font-tier='clause-label' style='font-size:{label_px}px;color:{color};margin-bottom:6px'{}>{label}</div>",
+        tip_attrs(ctx, tip)
     );
     html.push_str(&render_chunk_group(ctx, &clause.predicate, "", "", chunk_data));
     if let Some(conn) = &clause.connective {
         let id = chunk_data.len();
         chunk_data.push((conn.clone(), None, None, None, None));
         html.push_str(&format!(
-            "<div class='jong-row' data-chunk-id='{id}' style='margin-top:6px;font-size:11px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
+            "<div class='jong-row' data-chunk-id='{id}' data-font-tier='connective' style='margin-top:6px;font-size:{conn_px}px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
             conn.full
         ));
     }
@@ -1574,18 +1722,15 @@ fn render_row(
     if let Some(r) = role {
         let is_ambig = matches!(r, ParticleRole::Ambiguous(_));
         let class = if is_ambig { "ambiguous-badge jong-role-badge" } else { "resolved-badge jong-role-badge" };
+        let tip = role_tip(r);
+        let badge_px = scaled_font_px(ctx.font_size, "badge");
         html.push_str(&format!(
-            " <span class='{}'>{}</span>",
-            class,
+            " <span class='{class}' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+            tip_attrs(ctx, &tip),
             r.badge()
         ));
     }
-    if let Some(conj_tag) = word.verb_print() {
-        html.push_str(&format!(
-            " <span class='jong-verb-badge'>{}</span>",
-            conj_tag
-        ));
-    }
+    push_verb_badges(&mut html, ctx, word);
     html.push_str("</div>");
     html
 }
@@ -1607,164 +1752,156 @@ fn render_all_details(ctx: &RenderContext, chunk_data: &[ChunkData]) -> String {
 fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcToken>, secondary_particle: Option<&ProcToken>, role: Option<&ParticleRole>, selected_def: Option<usize>) -> String {
     let body_px = scaled_font_px(ctx.font_size, "detail");
     let head_px = scaled_font_px(ctx.font_size, "detail-head");
-    let sub_px = scaled_font_px(ctx.font_size, "detail-sub");
     let xs_px = scaled_font_px(ctx.font_size, "detail-xs");
+    let label_px = scaled_font_px(ctx.font_size, "section-label");
+    let badge_px = scaled_font_px(ctx.font_size, "badge");
+    let reading_px = scaled_font_px(ctx.font_size, "reading");
+    let pos_label = format!("{:?}", word.pos);
+    let pos_class = pos_badge_class(word.pos);
 
-    let mut html = format!("<div data-font-tier='detail' style='font-size:{body_px}px;line-height:1.6'>");
-
-    html.push_str(&format!(
-        "<div data-font-tier='detail-head' style='font-size:{head_px}px;font-weight:600;margin-bottom:4px'>{}</div>",
-        word.full
-    ));
+    let mut html = format!("<div class='jong-detail-card' data-font-tier='detail' style='font-size:{body_px}px;line-height:1.5'>");
 
     let is_proper_noun = word.sub1 == PartOfSpeechSubcategory1::ProperNoun;
-    match crate::jmdict::lookup_first_result(&word.base, word.pos, is_proper_noun) {
+    let dict_hit = crate::jmdict::lookup_first_result(&word.base, word.pos, is_proper_noun);
+
+    // Header: reading, headword + POS pill + verb tags, optional base
+    let reading = dict_hit.as_ref().map(|h| h.kana.as_str());
+    html.push_str("<div class='jong-card-header'>");
+    if has_kanji(&word.full) {
+        if let Some(r) = reading {
+            html.push_str(&format!(
+                "<div class='jong-card-reading' data-font-tier='reading' style='font-size:{reading_px}px'>{}</div>",
+                html_escape(r)
+            ));
+        }
+    }
+    html.push_str(&format!(
+        "<div class='jong-card-headword-row'>\
+         <div class='jong-card-headword' data-font-tier='detail-head' style='font-size:{head_px}px'>{}</div>\
+         <span class='jong-pos-badge {pos_class}' data-font-tier='badge' style='font-size:{badge_px}px'>{}</span>",
+        html_escape(&word.full),
+        html_escape(&pos_label)
+    ));
+    push_verb_badges(&mut html, ctx, word);
+    html.push_str("</div>");
+    if word.base != word.full {
+        html.push_str(&format!(
+            "<div class='jong-card-base' data-font-tier='reading' style='font-size:{reading_px}px'>Base: {}</div>",
+            html_escape(&word.base)
+        ));
+    }
+    html.push_str("</div>");
+
+    match dict_hit {
         Some(hit) => {
             let type_hint = match hit.source {
                 crate::jmdict::DictSource::JMnedict => format!(" [{}]", hit.noun_type.label()),
                 crate::jmdict::DictSource::JMdict => String::new(),
             };
+
+            html.push_str("<div class='jong-card-divider'></div>");
+            html.push_str("<div class='jong-def-section'>");
             html.push_str(&format!(
-                "<div><span class='jong-muted'>Reading:</span> {}</div>",
-                hit.kana
+                "<div class='jong-section-label' data-font-tier='section-label' style='font-size:{label_px}px'>Definitions{}</div>",
+                type_hint
             ));
-            html.push_str(&format!(
-                "<div><span class='jong-muted'>Base:</span> {}</div>",
-                word.base
-            ));
-            html.push_str(&format!(
-                "<div><span class='jong-muted'>POS:</span> {:?}</div>",
-                word.pos
-            ));
-            
-            html.push_str(&format!("<div style='margin-top:4px'><strong>Definitions:</strong>{}</div>", type_hint));
-            html.push_str("<div class='jong-def-box'>");
-            html.push_str("<ol>");
-            
-            // If there's a selected def, maybe show a toggle
+            html.push_str("<ol class='jong-def-list'>");
+
+            let primary = selected_def.unwrap_or(0);
             let is_resolved = selected_def.is_some();
-            
+
             for (i, def) in hit.glosses.iter().enumerate() {
-                let is_correct = selected_def.map(|s| s == i).unwrap_or(false);
-                let (display, weight, opacity) = if is_resolved && !is_correct {
-                    ("none", "400", "0.5")
-                } else if is_correct {
-                    ("list-item", "700", "1")
+                let is_primary = i == primary;
+                let (display, extra_class, opacity) = if is_resolved && !is_primary {
+                    ("none", "", "0.5")
+                } else if is_primary {
+                    ("block", " selected", "1")
                 } else {
-                    ("list-item", "400", "1")
+                    ("block", "", "1")
                 };
-                
+
                 html.push_str(&format!(
-                    "<li class='def-item' data-idx='{}' style='margin-bottom:4px;font-weight:{};opacity:{};display:{}'>{}</li>", 
-                    i, weight, opacity, display, def
+                    "<li class='def-item jong-def-item{extra_class}' data-idx='{i}' style='display:{display};opacity:{opacity}'>{def}</li>",
                 ));
             }
             html.push_str("</ol>");
-            
-            if is_resolved {
-                html.push_str(&format!("<div data-font-tier='detail-xs' style='margin-top:8px;font-size:{xs_px}px;text-align:center'>"));
-                html.push_str("<button onclick='\
-                    let items = this.parentElement.parentElement.querySelectorAll(\".def-item\");\
-                    let isHidden = items[0].style.display === \"none\" || items[1]?.style.display === \"none\";\
-                    for (let i=0; i<items.length; i++) { \
-                        items[i].style.display = \"list-item\"; \
-                        if (isHidden) { items[i].style.opacity = items[i].style.fontWeight === \"700\" ? \"1\" : \"0.5\"; } \
-                        else if (items[i].style.fontWeight !== \"700\") { items[i].style.display = \"none\"; } \
+
+            if is_resolved && hit.glosses.len() > 1 {
+                html.push_str(&format!(
+                    "<div class='jong-def-toggle' data-font-tier='detail-xs' style='font-size:{xs_px}px'>"
+                ));
+                html.push_str("<button type='button' onclick='\
+                    let section = this.closest(\".jong-def-section\");\
+                    let items = section.querySelectorAll(\".def-item\");\
+                    let isHidden = items.length > 1 && items[1].style.display === \"none\";\
+                    for (let i = 0; i < items.length; i++) {\
+                        if (isHidden) {\
+                            items[i].style.display = \"block\";\
+                            items[i].style.opacity = items[i].classList.contains(\"selected\") ? \"1\" : \"0.5\";\
+                        } else if (!items[i].classList.contains(\"selected\")) {\
+                            items[i].style.display = \"none\";\
+                        }\
                     }\
-                    this.innerText = isHidden ? \"Hide other definitions\" : \"Show other definitions\";\
-                ' style='background:none;border:none;color:#4a9;cursor:pointer;text-decoration:underline'>Show other definitions</button>");
+                    this.innerText = isHidden ? \"Hide extra definitions\" : \"Show all definitions\";\
+                '>Show all definitions</button>");
                 html.push_str("</div>");
             }
-            
+
             html.push_str("</div>");
         }
         None => {
-            html.push_str(&format!(
-                "<div><span class='jong-muted'>Base:</span> {}</div>",
-                word.base
-            ));
-            html.push_str(&format!(
-                "<div><span class='jong-muted'>POS:</span> {:?}</div>",
-                word.pos
-            ));
-            html.push_str("<div class='jong-muted'>no dictionary entry</div>");
+            html.push_str("<div class='jong-no-entry'>No dictionary entry</div>");
         }
     }
 
     if let Some(p) = particle {
-        html.push_str("<div class='jong-detail-section' style='margin-top:10px;padding-top:6px'>");
+        html.push_str("<div class='jong-card-divider'></div>");
         html.push_str(&format!(
-            "<div data-font-tier='detail-sub' style='font-weight:600;font-size:{sub_px}px;margin-bottom:4px'>Particle: {}</div>",
-            p.full
+            "<div class='jong-section-label' data-font-tier='section-label' style='font-size:{label_px}px'>Particle</div>"
+        ));
+        html.push_str("<div class='jong-particle-row'>");
+        html.push_str(&format!(
+            "<span class='jong-particle-chip'>{}</span>",
+            html_escape(&p.full)
         ));
         match role {
             Some(ParticleRole::Ambiguous(candidates)) => {
-                html.push_str(
-                    "<div><strong>Role is ambiguous (candidates):</strong></div>\
-                     <ul style='margin:4px 0 4px 16px;padding:0'>",
-                );
                 for c in candidates {
+                    let tip = format!("{}: {}", c.badge(), c.explanation());
                     html.push_str(&format!(
-                        "<li><strong>{}</strong></li>",
-                        c.badge(),
+                        "<span class='ambiguous-badge jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                        tip_attrs(ctx, &tip),
+                        c.badge()
                     ));
                 }
-                html.push_str("</ul>");
             }
             Some(r) => {
+                let tip = role_tip(r);
                 html.push_str(&format!(
-                    "<div><strong>Role:</strong> {}</div>",
+                    "<span class='resolved-badge jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                    tip_attrs(ctx, &tip),
                     r.badge()
                 ));
             }
             None => {
-                html.push_str("<div><strong>Role:</strong> unknown</div>");
-            }
-        }
-        if let Some(sp) = secondary_particle {
-            html.push_str(&format!(
-                "<div style='margin-top:6px'><strong>Topicalizer:</strong> {}</div>",
-                sp.full
-            ));
-        }
-        html.push_str("</div>");
-    }
-
-    if let Some(conj) = &word.conjugation {
-        let mut flags: Vec<&str> = Vec::new();
-        if conj.negative {
-            flags.push("Negative");
-        }
-        if conj.past {
-            flags.push("Past");
-        }
-        if conj.teform {
-            flags.push("Te-form");
-        }
-        if !flags.is_empty() {
-            html.push_str(&format!(
-                "<div class='jong-detail-section' style='margin-top:10px;padding-top:6px'>\
-                 <div style='font-weight:600'>Conjugation</div><div>{}</div></div>",
-                flags.join(", ")
-            ));
-        }
-    }
-
-    if let Some(staircase) = &word.staircase {
-        if staircase.len() > 1 {
-            html.push_str("<div class='jong-detail-section' style='margin-top:10px;padding-top:6px'>");
-            html.push_str("<div style='font-weight:600;margin-bottom:4px'>Conjugation Breakdown:</div>");
-            html.push_str("<div style='max-height:150px;overflow-y:auto;border:1px solid var(--jong-border-color, #ccc);padding:8px;margin-top:2px'>");
-            
-            for step in staircase {
                 html.push_str(&format!(
-                    "<div style='margin-bottom:2px'><span style='font-weight:600'>{}</span> <span style='color:var(--jong-muted-color,#666)'>({})</span></div>",
-                    html_escape(&step.text),
-                    html_escape(&step.description)
+                    "<span class='jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'>Unknown</span>"
                 ));
             }
-            
-            html.push_str("</div></div>");
+        }
+        html.push_str("</div>");
+
+        if let Some(sp) = secondary_particle {
+            html.push_str("<div class='jong-card-divider'></div>");
+            html.push_str(&format!(
+                "<div class='jong-section-label' data-font-tier='section-label' style='font-size:{label_px}px'>Topicalizer</div>"
+            ));
+            html.push_str("<div class='jong-particle-row'>");
+            html.push_str(&format!(
+                "<span class='jong-particle-chip'>{}</span>",
+                html_escape(&sp.full)
+            ));
+            html.push_str("</div>");
         }
     }
 
