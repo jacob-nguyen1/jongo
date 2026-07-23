@@ -124,6 +124,66 @@ fn apply_theme(el: &web_sys::HtmlElement, dark: bool) {
     }
 }
 
+/// Theme the floating prompt host without the analysis-window box chrome.
+fn apply_prompt_theme(el: &web_sys::HtmlElement, dark: bool) {
+    if dark {
+        let _ = el.set_attribute("data-jong-dark", "1");
+    } else {
+        let _ = el.remove_attribute("data-jong-dark");
+    }
+    let _ = el.style().set_property("background", "transparent");
+    let _ = el.style().set_property("border", "none");
+    let _ = el.style().set_property("padding", "0");
+    let _ = el.style().remove_property("color");
+}
+
+const PROMPT_FADE_MS: i32 = 160;
+
+fn fade_remove_prompt(el: web_sys::HtmlElement) {
+    let _ = el.class_list().remove_1("jong-prompt-enter");
+    let _ = el.class_list().add_1("jong-prompt-leave");
+    let Some(window) = web_sys::window() else {
+        el.remove();
+        return;
+    };
+    let cb = Closure::once(move || {
+        el.remove();
+    });
+    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+        cb.as_ref().unchecked_ref(),
+        PROMPT_FADE_MS,
+    );
+    cb.forget();
+}
+
+fn prompt_host_html() -> &'static str {
+    "\
+<style>\
+.jong-prompt-host{position:absolute;z-index:10000;pointer-events:auto;opacity:0;\
+transform:translateX(-50%) translateY(6px) scale(0.96);\
+transition:opacity .15s ease,transform .15s ease}\
+.jong-prompt-host.jong-prompt-above{transform:translateX(-50%) translateY(-6px) scale(0.96)}\
+.jong-prompt-host.jong-prompt-enter{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}\
+.jong-prompt-host.jong-prompt-leave{opacity:0;pointer-events:none;\
+transform:translateX(-50%) translateY(4px) scale(0.96)}\
+.jong-prompt-host.jong-prompt-above.jong-prompt-leave{\
+transform:translateX(-50%) translateY(-4px) scale(0.96)}\
+.jong-prompt-btn{appearance:none;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;\
+background:#1c1c1c;color:#f4f4f4;border:1px solid rgba(255,255,255,.08);\
+border-radius:999px;padding:7px 16px;font-size:13px;font-weight:650;letter-spacing:.04em;\
+line-height:1;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2),0 1px 2px rgba(0,0,0,.12);\
+transition:transform .12s ease,box-shadow .12s ease,background .12s ease,border-color .12s ease}\
+.jong-prompt-btn:hover{transform:translateY(-1px);background:#2a2a2a;\
+box-shadow:0 8px 22px rgba(0,0,0,.24),0 1px 2px rgba(0,0,0,.14)}\
+.jong-prompt-btn:active{transform:translateY(0);box-shadow:0 2px 8px rgba(0,0,0,.18)}\
+[data-jong-dark=\"1\"] .jong-prompt-btn{background:#ececec;color:#161616;border-color:rgba(0,0,0,.08);\
+box-shadow:0 4px 16px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.2)}\
+[data-jong-dark=\"1\"] .jong-prompt-btn:hover{background:#fff;transform:translateY(-1px)}\
+[data-jong-dark=\"1\"] .jong-prompt-btn:active{transform:translateY(0)}\
+</style>\
+<button type='button' class='jong-prompt-btn' title='Analyze with Jongo'>jong</button>"
+}
+
 fn html_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -197,7 +257,7 @@ impl JongoController {
 
     fn apply_dark_mode_all(&self) {
         if let Some(prompt) = &self.prompt {
-            apply_theme(prompt, self.dark_mode);
+            apply_prompt_theme(prompt, self.dark_mode);
         }
         for a in &self.analyses {
             apply_theme(&a.element, self.dark_mode);
@@ -207,6 +267,18 @@ impl JongoController {
     fn set_dark_mode(&mut self, on: bool) {
         self.dark_mode = on;
         self.apply_dark_mode_all();
+    }
+
+    fn dismiss_prompt(&mut self) {
+        if let Some(old) = self.prompt.take() {
+            fade_remove_prompt(old);
+        }
+    }
+
+    fn dismiss_prompt_immediate(&mut self) {
+        if let Some(old) = self.prompt.take() {
+            old.remove();
+        }
     }
 
     fn disable(&mut self) {
@@ -279,59 +351,95 @@ impl JongoController {
         let _ = selection.add_range(&range);
 
         let sentence_str = String::from_utf16(&text_vec[sentence_start..sentence_end]).unwrap_or_default();
+        if sentence_str.trim().is_empty() {
+            return;
+        }
         console::log_1(&format!("Sentence: {}", sentence_str).into());
 
-        // initate new prompt 
-        let element = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
-
-        element.style().set_property("position", "absolute").unwrap();
-        let scroll_x = window.scroll_x().unwrap_or(0.0);
-        let scroll_y = window.scroll_y().unwrap_or(0.0);
-        element.style().set_property("top", &format!("{}px", rect.bottom() + scroll_y)).unwrap();
-        let left = (rect.left() + scroll_x).max(10.0);
-        element.style().set_property("left", &format!("{}px", left)).unwrap();
-        element.style().set_property("transform", "translateX(-50%)").unwrap();
-        element.style().set_property("z-index", "9999").unwrap();
-        element.style().set_property("background", "white").unwrap();
-        element.style().set_property("border", "1px solid black").unwrap();
-        element.style().set_property("padding", "10px").unwrap();
-        element.style().set_property("color", "black").unwrap();
-
-        element.set_inner_html("<button class='jong-prompt-btn' style='background:#fff;color:#333;border:1px solid #ccc;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:500;cursor:pointer'>jong</button>");
-        apply_theme(&element, self.dark_mode);
-
-        // delete old prompt
-        if let Some(old) = self.prompt.take() {
-            old.remove();
+        // Already showing for this sentence — keep the button (avoids restarting enter animation)
+        if let Some(existing) = &self.prompt {
+            if existing.get_attribute("data-jong-sentence").as_deref() == Some(sentence_str.as_str()) {
+                return;
+            }
         }
 
-        // spawn new prompt
+        let element = document
+            .create_element("div")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlElement>()
+            .unwrap();
+        element.set_class_name("jong-prompt-host");
+        let _ = element.set_attribute("data-jong-sentence", &sentence_str);
+
+        let scroll_x = window.scroll_x().unwrap_or(0.0);
+        let scroll_y = window.scroll_y().unwrap_or(0.0);
+        let viewport_w = window.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(800.0);
+        let viewport_h = window.inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(600.0);
+        const BTN_EST_W: f64 = 72.0;
+        const BTN_EST_H: f64 = 36.0;
+        const GAP: f64 = 8.0;
+
+        let space_below = viewport_h - rect.bottom();
+        let space_above = rect.top();
+        let place_above = space_below < BTN_EST_H + GAP && space_above > space_below;
+        if place_above {
+            let _ = element.class_list().add_1("jong-prompt-above");
+        }
+
+        let top = if place_above {
+            rect.top() + scroll_y - BTN_EST_H - GAP
+        } else {
+            rect.bottom() + scroll_y + GAP
+        };
+        let caret_mid_x = rect.left() + rect.width() * 0.5;
+        let left = (caret_mid_x + scroll_x)
+            .clamp(scroll_x + BTN_EST_W * 0.5 + 8.0, scroll_x + viewport_w - BTN_EST_W * 0.5 - 8.0);
+
+        element.style().set_property("position", "absolute").unwrap();
+        element.style().set_property("top", &format!("{top}px")).unwrap();
+        element.style().set_property("left", &format!("{left}px")).unwrap();
+        element.set_inner_html(prompt_host_html());
+        apply_prompt_theme(&element, self.dark_mode);
+
+        // Replace previous prompt without fade (avoids stacked ghosts while Shift-scanning)
+        self.dismiss_prompt_immediate();
+
         document.body().unwrap().append_child(&element).unwrap();
 
-        // prevent clicks inside the prompt from dismissing it
+        // Enter animation on next frame so the initial opacity:0 state paints first
+        {
+            let el = element.clone();
+            let enter_cb = Closure::once(move || {
+                let _ = el.class_list().add_1("jong-prompt-enter");
+            });
+            let _ = window.request_animation_frame(enter_cb.as_ref().unchecked_ref());
+            enter_cb.forget();
+        }
+
+        // Clicks inside the host must not bubble to the document dismiss listener
         let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
             e.stop_propagation();
         });
-        element.add_event_listener_with_callback("click", stop_prop.as_ref().unchecked_ref()).unwrap();
+        element
+            .add_event_listener_with_callback("click", stop_prop.as_ref().unchecked_ref())
+            .unwrap();
         stop_prop.forget();
 
         let sentence = sentence_str;
         let context = block_text;
         let btn = element.query_selector("button").unwrap().unwrap();
 
-        // closure that runs when jong is clicked
         let cb = Closure::<dyn FnMut()>::new(move || {
             CONTROLLER.with(|c| {
                 if let Ok(mut ctrl) = c.try_borrow_mut() {
                     ctrl.analyze(&sentence, &context);
-                    if let Some(old) = ctrl.prompt.take() {
-                        old.remove();
-                    }
+                    ctrl.dismiss_prompt_immediate();
                 }
             });
         });
 
-        btn.add_event_listener_with_callback("click", cb.as_ref().unchecked_ref()).unwrap();
+        btn.add_event_listener_with_callback("click", cb.as_ref().unchecked_ref())
+            .unwrap();
         cb.forget();
 
         self.prompt = Some(element);
@@ -966,13 +1074,11 @@ pub fn content_start() {
         .unwrap();
     mouse_move_cb.forget();
 
-    // mouse click
+    // mouse click — outside click dismisses with fade
     let mouse_click_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|_e: web_sys::MouseEvent| {
         CONTROLLER.with(|c| {
             if let Ok(mut ctrl) = c.try_borrow_mut() {
-                if let Some(old) = ctrl.prompt.take() {
-                    old.remove();
-                }
+                ctrl.dismiss_prompt();
             }
         });
     });
@@ -983,7 +1089,16 @@ pub fn content_start() {
 
     // key press
     let key_cb = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|e: web_sys::KeyboardEvent| {
-        if e.key() == "Shift" {
+        let key = e.key();
+        if key == "Escape" {
+            CONTROLLER.with(|c| {
+                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    ctrl.dismiss_prompt();
+                }
+            });
+            return;
+        }
+        if key == "Shift" {
             CONTROLLER.with(|c| {
                 if let Ok(mut ctrl) = c.try_borrow_mut() {
                     ctrl.prompt();

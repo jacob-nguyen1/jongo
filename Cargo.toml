@@ -8,7 +8,7 @@ console_error_panic_hook = "0.1.7"
 lindera = { version = "3.0.7", features = ["embed-ipadic"] }
 phf = { version = "0.13.1", features = ["macros"] }
 wasm-bindgen = "0.2.123"
-web-sys = { version = "0.3.100", features = ["Window", "Document", "Element", "HtmlElement", "HtmlInputElement", "Node", "MouseEvent", "KeyboardEvent", "Event", "EventTarget", "console", "Range", "CaretPosition", "DomRect", "Selection", "NodeList", "CssStyleDeclaration"] }
+web-sys = { version = "0.3.100", features = ["Window", "Document", "Element", "HtmlElement", "HtmlInputElement", "Node", "MouseEvent", "KeyboardEvent", "Event", "EventTarget", "console", "Range", "CaretPosition", "DomRect", "Selection", "NodeList", "CssStyleDeclaration", "DomTokenList"] }
 strum = "0.26"
 strum_macros = "0.26"
 
