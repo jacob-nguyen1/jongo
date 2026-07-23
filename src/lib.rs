@@ -115,9 +115,9 @@ fn apply_theme(el: &web_sys::HtmlElement, dark: bool) {
     if dark {
         let _ = el.set_attribute("data-jong-dark", "1");
         let _ = el.style().remove_property("filter");
-        let _ = el.style().set_property("background", "#3c3c3c");
-        let _ = el.style().set_property("color", "#e8e8e8");
-        let _ = el.style().set_property("border-color", "#666");
+        let _ = el.style().set_property("background", DARK_BASE);
+        let _ = el.style().set_property("color", DARK_TEXT);
+        let _ = el.style().set_property("border-color", DARK_BORDER_STRONG);
     } else {
         let _ = el.remove_attribute("data-jong-dark");
         let _ = el.style().remove_property("filter");
@@ -184,17 +184,53 @@ box-shadow:0 4px 16px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.2)}\
 <button type='button' class='jong-prompt-btn' title='Analyze with Jongo'>jong</button>"
 }
 
+const DISAMBIGUATE_BTN_HTML: &str = "\
+<button class='jong-disambiguate refine-ai-btn' type='button' title='Disambiguate with AI'>Disambiguate</button>";
+
+const DISAMBIGUATE_SPINNER_HTML: &str = "\
+<svg class='jong-disambiguate-spinner' width='14' height='14' viewBox='0 0 24 24' fill='none' aria-hidden='true'>\
+<circle cx='12' cy='12' r='9' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-dasharray='42 14'/>\
+</svg>";
+
+// Dark palette — base #22242a, surfaces/borders/text derived from it
+const DARK_BASE: &str = "#22242a";
+const DARK_SURFACE: &str = "#2a2c34";
+const DARK_SURFACE_HIGH: &str = "#32343e";
+const DARK_SURFACE_HOVER: &str = "#3a3c48";
+const DARK_BORDER: &str = "#3e404a";
+const DARK_BORDER_STRONG: &str = "#4e505c";
+const DARK_TEXT: &str = "#e8eaef";
+const DARK_TEXT_SECONDARY: &str = "#d0d3db";
+const DARK_TEXT_MUTED: &str = "#a8acb8";
+const DARK_TEXT_DIM: &str = "#9094a0";
+const DARK_SELECTED: &str = "#2e3648";
+const DARK_SCROLL_THUMB: &str = "#6b6e7a";
+
 fn scaled_font_px(base: u32, tier: &str) -> u32 {
     let factor: f32 = match tier {
         "mod" => 0.9,
         "title" | "detail-sub" => 0.8125,
+        "legend-section" => 0.7,
         "detail" => 0.75,
         "detail-xs" => 0.6875,
         "section-label" | "badge" => 0.5,
-        "reading" | "clause-label" | "connective" => 0.55,
+        "reading" | "clause-label" => 0.55,
+        "connective" => 0.9,
         _ => 1.0,
     };
     ((base as f32 * factor).round() as u32).max(8)
+}
+
+fn clause_relation_theme_class(relation: &ClauseRelation) -> &'static str {
+    match relation {
+        ClauseRelation::Main => "jong-clause-main",
+        ClauseRelation::Modifier => "jong-clause-modifier",
+        _ => "",
+    }
+}
+
+fn legend_clause_badge_style(color: &str) -> String {
+    format!("color:{color};background:{color}22;border:1px solid {color}55")
 }
 
 fn pos_badge_class(pos: PartOfSpeech) -> &'static str {
@@ -625,20 +661,26 @@ impl JongoController {
              .jong-row-selected{{background:#dbeafe}}\
              .jong-top-bar{{display:flex;align-items:stretch;background:#f5f5f5;border-bottom:1px solid #e0e0e0;flex-shrink:0;height:32px}}\
              .jong-drag-handle{{flex:1;cursor:move;display:flex;align-items:center;padding:0 12px;user-select:none}}\
-             .jong-legend{{background:#fefce8;color:#ca8a04;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
-             .jong-legend:hover{{background:#fef9c3;color:#a16207}}\
+             .jong-legend{{background:#fffef5;color:#ca8a04;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
+             .jong-legend:hover{{background:#fefce8;color:#a16207}}\
+             .jong-legend-active{{background:#fef9c3 !important;color:#a16207 !important}}\
+             .jong-disambiguate{{background:#f5f3ff;color:#7c3aed;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:600;letter-spacing:.02em;transition:background 0.2s,color 0.2s,opacity 0.2s}}\
+             .jong-disambiguate:hover{{background:#ede9fe;color:#6d28d9}}\
+             .jong-disambiguate-loading{{pointer-events:none;opacity:0.85}}\
+             .jong-disambiguate-spinner{{animation:jong-spin 0.8s linear infinite}}\
+             @keyframes jong-spin{{to{{transform:rotate(360deg)}}}}\
              .jong-font-btn{{background:#f8fafc;color:#475569;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;min-width:32px;transition:background 0.2s}}\
              .jong-font-btn:hover{{background:#e2e8f0;color:#1e293b}}\
              .jong-close{{background:#fef2f2;color:#ef4444;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
              .jong-close:hover{{background:#fee2e2;color:#dc2626}}\
-             .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box;overflow:hidden}}\
+             .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 0;box-sizing:border-box;overflow:hidden}}\
              .jong-structure-scroll,.jong-detail,.jong-panel,.jong-def-box,.jong-staircase-box,.jong-tree-scroll-wrapper{{scrollbar-width:thin;scrollbar-color:#444 #e8e8e8}}\
              .jong-structure-scroll::-webkit-scrollbar,.jong-detail::-webkit-scrollbar,.jong-panel::-webkit-scrollbar,.jong-def-box::-webkit-scrollbar,.jong-staircase-box::-webkit-scrollbar,.jong-tree-scroll-wrapper::-webkit-scrollbar{{width:5px;height:5px}}\
              .jong-structure-scroll::-webkit-scrollbar-thumb,.jong-detail::-webkit-scrollbar-thumb,.jong-panel::-webkit-scrollbar-thumb,.jong-def-box::-webkit-scrollbar-thumb,.jong-staircase-box::-webkit-scrollbar-thumb,.jong-tree-scroll-wrapper::-webkit-scrollbar-thumb{{background:#444;border-radius:0}}\
              .jong-structure-scroll::-webkit-scrollbar-track,.jong-detail::-webkit-scrollbar-track,.jong-panel::-webkit-scrollbar-track,.jong-def-box::-webkit-scrollbar-track,.jong-staircase-box::-webkit-scrollbar-track,.jong-tree-scroll-wrapper::-webkit-scrollbar-track{{background:#e8e8e8}}\
              .jong-structure-scroll{{direction:rtl;overflow-y:auto;overflow-x:hidden;flex:1;min-width:0;margin:0;user-select:none}}\
              .jong-structure-inner{{direction:ltr;padding:0 8px 0 6px}}\
-             .jong-detail{{flex:1;min-width:0;overflow-y:auto;border-left:1px solid #ddd;padding-left:12px;position:relative}}\
+             .jong-detail{{flex:1;min-width:0;overflow-y:auto;border-left:2px solid #bbb;padding:0 8px 0 12px;position:relative}}\
              .jong-muted{{color:#444}}\
              .jong-hint{{color:#555;font-size:11px}}\
              .jong-word-head{{font-weight:600;color:#111}}\
@@ -648,7 +690,6 @@ impl JongoController {
              .ambiguous-badge{{color:#b45309 !important;border-color:#f59e0b !important;background:#fffbeb !important;font-weight:600}}\
              .resolved-badge{{color:#15803d !important;border-color:#22c55e !important;background:#f0fdf4 !important;font-weight:600}}\
              .jong-verb-badge{{color:#0369a1;border:1px solid #0ea5e9;background:#f0f9ff;border-radius:999px;padding:2px 8px;font-weight:600}}\
-             .refine-ai-btn{{background:#f0f0f0;border:1px solid #ccc;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;color:#333;font-weight:500;flex-shrink:0}}\
              .jong-def-box{{max-height:150px;overflow-y:auto;background:#fafafa;border:1px solid #eee;border-radius:4px;padding:8px 8px 8px 24px;margin-top:2px}}\
              .jong-def-box ol{{margin:0;padding:0;color:#333}}\
              .jong-card-header{{margin-bottom:2px}}\
@@ -681,7 +722,7 @@ impl JongoController {
              .jong-staircase-step{{margin-bottom:4px;line-height:1.4}}\
              .jong-no-entry{{color:#888;font-style:italic;margin-top:4px}}\
              .jong-detail-section{{border-top:1px solid #eee}}\
-             .jong-accordion{{border:1px solid #e0e0e0;border-radius:6px;margin-bottom:6px;overflow:hidden}}\
+             .jong-accordion{{border:2px solid #ccc;border-radius:6px;margin-bottom:6px;overflow:hidden;cursor:pointer}}\
              .jong-accordion summary{{cursor:pointer;padding:6px 10px;font-size:13px;font-weight:600;background:#f8f9fa;list-style:none;display:flex;align-items:center;gap:6px;user-select:none}}\
              .jong-accordion summary::-webkit-details-marker{{display:none}}\
              .jong-accordion summary::before{{content:'▶';font-size:9px;transition:transform 0.15s;display:inline-block}}\
@@ -690,66 +731,73 @@ impl JongoController {
              .jong-accordion-highlight{{border-color:#3b82f6;box-shadow:0 0 0 1px #3b82f6}}\
              .jong-panel{{flex:1;min-width:0;min-height:0;overflow-y:auto;padding:4px 12px 12px;font-size:12px;line-height:1.5;box-sizing:border-box}}\
              .jong-panel-section{{margin-top:14px}}\
-             .jong-panel-section h3{{font-size:13px;margin:0 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}}\
-             .jong-legend-row{{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}}\
-             .jong-legend-badge{{flex-shrink:0;min-width:110px;font-size:10px;border:1px solid #ccc;border-radius:3px;padding:1px 6px;color:#444}}\
-             .jong-back{{background:none;border:none;color:#4a9;cursor:pointer;font-size:12px;padding:0;margin-bottom:10px}}\
-             [data-jong-dark=\"1\"] .jong-row:hover{{background:#4a4a4a}}\
-             [data-jong-dark=\"1\"] .jong-row-selected{{background:#334155}}\
-             [data-jong-dark=\"1\"] .jong-top-bar{{background:#2d2d2d;border-bottom-color:#444}}\
-             [data-jong-dark=\"1\"] .jong-drag-handle{{color:#bbb}}\
-             [data-jong-dark=\"1\"] .jong-legend{{background:#3b2d12;color:#facc15;border-left-color:#444}}\
-             [data-jong-dark=\"1\"] .jong-legend:hover{{background:#543e17;color:#fde047}}\
-             [data-jong-dark=\"1\"] .jong-font-btn{{background:#334155;color:#cbd5e1;border-left-color:#444}}\
-             [data-jong-dark=\"1\"] .jong-font-btn:hover{{background:#475569;color:#f1f5f9}}\
-             [data-jong-dark=\"1\"] .jong-close{{background:#451a1a;color:#f87171;border-left-color:#444}}\
-             [data-jong-dark=\"1\"] .jong-close:hover{{background:#7f1d1d;color:#fca5a5}}\
-             [data-jong-dark=\"1\"] .jong-detail{{border-left-color:#666}}\
-             [data-jong-dark=\"1\"] .jong-muted{{color:#ddd}}\
-             [data-jong-dark=\"1\"] .jong-hint{{color:#ccc}}\
-             [data-jong-dark=\"1\"] .jong-word-head{{color:#f0f0f0}}\
-             [data-jong-dark=\"1\"] .jong-word-mod{{color:#e0e0e0}}\
-             [data-jong-dark=\"1\"] .jong-tree-arm{{color:#aaa}}\
-             [data-jong-dark=\"1\"] .jong-role-badge{{color:#ccc;border-color:#777}}\
-             [data-jong-dark=\"1\"] .refine-ai-btn{{background:#4a4a4a;border-color:#777;color:#e0e0e0}}\
-             [data-jong-dark=\"1\"] .jong-def-box{{background:#333;border-color:#555}}\
-             [data-jong-dark=\"1\"] .jong-def-box ol{{color:#e0e0e0}}\
-             [data-jong-dark=\"1\"] .jong-card-reading{{color:#aaa}}\
-             [data-jong-dark=\"1\"] .jong-card-headword{{color:#f0f0f0}}\
-             [data-jong-dark=\"1\"] .jong-card-base{{color:#aaa}}\
+             .jong-panel-section h3{{margin:0 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}}\
+             .jong-legend-section-title{{font-weight:600;color:#333}}\
+             .jong-legend-row{{display:flex;gap:8px;align-items:center;margin-bottom:6px}}\
+             .jong-legend-row .jong-role-badge,.jong-legend-row .jong-verb-badge,.jong-legend-row .jong-pos-badge{{flex-shrink:0}}\
+             .jong-legend-clause-badge{{display:inline-flex;align-items:center;flex-shrink:0;min-width:96px;font-weight:600;padding:2px 8px;border-radius:4px;box-sizing:border-box}}\
+             [data-jong-dark=\"1\"] .jong-row:hover{{background:{DARK_SURFACE_HIGH}}}\
+             [data-jong-dark=\"1\"] .jong-row-selected{{background:{DARK_SELECTED}}}\
+             [data-jong-dark=\"1\"] .jong-top-bar{{background:{DARK_SURFACE};border-bottom-color:{DARK_BORDER}}}\
+             [data-jong-dark=\"1\"] .jong-drag-handle{{color:{DARK_TEXT_MUTED}}}\
+             [data-jong-dark=\"1\"] .jong-legend{{background:#352c14;color:#facc15;border-left-color:{DARK_BORDER}}}\
+             [data-jong-dark=\"1\"] .jong-legend:hover{{background:#42361a;color:#fde047}}\
+             [data-jong-dark=\"1\"] .jong-legend-active{{background:#4a3d1e !important;color:#fde047 !important}}\
+             [data-jong-dark=\"1\"] .jong-disambiguate{{background:#2e1065;color:#c4b5fd;border-left-color:{DARK_BORDER}}}\
+             [data-jong-dark=\"1\"] .jong-disambiguate:hover{{background:#3b0764;color:#ddd6fe}}\
+             [data-jong-dark=\"1\"] .jong-font-btn{{background:{DARK_SURFACE_HIGH};color:{DARK_TEXT_SECONDARY};border-left-color:{DARK_BORDER}}}\
+             [data-jong-dark=\"1\"] .jong-font-btn:hover{{background:{DARK_SURFACE_HOVER};color:{DARK_TEXT}}}\
+             [data-jong-dark=\"1\"] .jong-close{{background:#3a2224;color:#f87171;border-left-color:{DARK_BORDER}}}\
+             [data-jong-dark=\"1\"] .jong-close:hover{{background:#4f2b2e;color:#fca5a5}}\
+             [data-jong-dark=\"1\"] .jong-detail{{border-left-color:{DARK_BORDER_STRONG}}}\
+             [data-jong-dark=\"1\"] .jong-muted{{color:{DARK_TEXT_SECONDARY}}}\
+             [data-jong-dark=\"1\"] .jong-hint{{color:{DARK_TEXT_MUTED}}}\
+             [data-jong-dark=\"1\"] .jong-word-head{{color:{DARK_TEXT}}}\
+             [data-jong-dark=\"1\"] .jong-word-mod{{color:{DARK_TEXT_SECONDARY}}}\
+             [data-jong-dark=\"1\"] .jong-tree-arm{{color:{DARK_TEXT_DIM}}}\
+             [data-jong-dark=\"1\"] .jong-role-badge{{color:{DARK_TEXT_MUTED};border-color:{DARK_BORDER_STRONG}}}\
+             [data-jong-dark=\"1\"] .jong-def-box{{background:{DARK_SURFACE};border-color:{DARK_BORDER}}}\
+             [data-jong-dark=\"1\"] .jong-def-box ol{{color:{DARK_TEXT_SECONDARY}}}\
+             [data-jong-dark=\"1\"] .jong-card-reading{{color:{DARK_TEXT_DIM}}}\
+             [data-jong-dark=\"1\"] .jong-card-headword{{color:{DARK_TEXT}}}\
+             [data-jong-dark=\"1\"] .jong-card-base{{color:{DARK_TEXT_DIM}}}\
              [data-jong-dark=\"1\"] .jong-pos-noun{{color:#a5b4fc;background:#1e1b4b;border-color:#4338ca}}\
              [data-jong-dark=\"1\"] .jong-pos-verb{{color:#fda4af;background:#4c0519;border-color:#be123c}}\
              [data-jong-dark=\"1\"] .jong-pos-adj{{color:#d8b4fe;background:#3b0764;border-color:#7e22ce}}\
              [data-jong-dark=\"1\"] .jong-pos-adv{{color:#f0abfc;background:#4a044e;border-color:#a21caf}}\
              [data-jong-dark=\"1\"] .jong-pos-aux{{color:#c4b5fd;background:#2e1065;border-color:#6d28d9}}\
-             [data-jong-dark=\"1\"] .jong-pos-part{{color:#cbd5e1;background:#1e293b;border-color:#475569}}\
-             [data-jong-dark=\"1\"] .jong-pos-conj{{color:#d6d3d1;background:#292524;border-color:#57534e}}\
+             [data-jong-dark=\"1\"] .jong-pos-part{{color:#cbd5e1;background:{DARK_SURFACE_HIGH};border-color:{DARK_BORDER_STRONG}}}\
+             [data-jong-dark=\"1\"] .jong-pos-conj{{color:#d6d3d1;background:#2c2a32;border-color:{DARK_BORDER_STRONG}}}\
              [data-jong-dark=\"1\"] .jong-pos-interj{{color:#f9a8d4;background:#500724;border-color:#db2777}}\
-             [data-jong-dark=\"1\"] .jong-pos-neutral{{color:#d1d5db;background:#374151;border-color:#6b7280}}\
-             [data-jong-dark=\"1\"] .jong-section-label{{color:#aaa}}\
-             [data-jong-dark=\"1\"] .jong-card-divider{{border-top-color:#555}}\
-             [data-jong-dark=\"1\"] .jong-def-item{{color:#bbb;border-left-color:transparent}}\
-             [data-jong-dark=\"1\"] .jong-def-item.selected{{color:#f0f0f0;border-left-color:#4ade80}}\
+             [data-jong-dark=\"1\"] .jong-pos-neutral{{color:#d1d5db;background:{DARK_SURFACE_HIGH};border-color:{DARK_BORDER_STRONG}}}\
+             [data-jong-dark=\"1\"] .jong-section-label{{color:{DARK_TEXT_DIM}}}\
+             [data-jong-dark=\"1\"] .jong-card-divider{{border-top-color:{DARK_BORDER}}}\
+             [data-jong-dark=\"1\"] .jong-def-item{{color:{DARK_TEXT_MUTED};border-left-color:transparent}}\
+             [data-jong-dark=\"1\"] .jong-def-item.selected{{color:{DARK_TEXT};border-left-color:#4ade80}}\
              [data-jong-dark=\"1\"] .jong-def-toggle button{{color:#6ee7b7}}\
-             [data-jong-dark=\"1\"] .jong-particle-chip{{background:#3a3a3a;border-color:#666;color:#e0e0e0}}\
-             [data-jong-dark=\"1\"] .jong-staircase-box{{background:#333;border-color:#555;color:#e0e0e0}}\
-             [data-jong-dark=\"1\"] .jong-no-entry{{color:#aaa}}\
-             [data-jong-dark=\"1\"] .jong-detail-section{{border-top-color:#555}}\
-             [data-jong-dark=\"1\"] .jong-accordion{{border-color:#555}}\
-             [data-jong-dark=\"1\"] .jong-accordion summary{{background:#3a3a3a;color:#e0e0e0}}\
+             [data-jong-dark=\"1\"] .jong-particle-chip{{background:{DARK_SURFACE_HIGH};border-color:{DARK_BORDER_STRONG};color:{DARK_TEXT_SECONDARY}}}\
+             [data-jong-dark=\"1\"] .jong-staircase-box{{background:{DARK_SURFACE};border-color:{DARK_BORDER};color:{DARK_TEXT_SECONDARY}}}\
+             [data-jong-dark=\"1\"] .jong-no-entry{{color:{DARK_TEXT_DIM}}}\
+             [data-jong-dark=\"1\"] .jong-detail-section{{border-top-color:{DARK_BORDER}}}\
+             [data-jong-dark=\"1\"] .jong-accordion{{border-color:{DARK_BORDER_STRONG}}}\
+             [data-jong-dark=\"1\"] .jong-accordion summary{{background:{DARK_SURFACE};color:{DARK_TEXT_SECONDARY}}}\
              [data-jong-dark=\"1\"] .jong-accordion-highlight{{border-color:#60a5fa;box-shadow:0 0 0 1px #60a5fa}}\
-             [data-jong-dark=\"1\"] .jong-structure-scroll,[data-jong-dark=\"1\"] .jong-detail,[data-jong-dark=\"1\"] .jong-panel,[data-jong-dark=\"1\"] .jong-def-box,[data-jong-dark=\"1\"] .jong-staircase-box,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper{{scrollbar-color:#888 #333}}\
-             [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-detail::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-def-box::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-staircase-box::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper::-webkit-scrollbar-thumb{{background:#888}}\
-             [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-detail::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-def-box::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-staircase-box::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper::-webkit-scrollbar-track{{background:#333}}\
-             [data-jong-dark=\"1\"] .jong-panel-section h3{{border-bottom-color:#666}}\
-             [data-jong-dark=\"1\"] .jong-legend-badge{{border-color:#777;color:#ddd}}\
+             [data-jong-dark=\"1\"] .jong-structure-scroll,[data-jong-dark=\"1\"] .jong-detail,[data-jong-dark=\"1\"] .jong-panel,[data-jong-dark=\"1\"] .jong-def-box,[data-jong-dark=\"1\"] .jong-staircase-box,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper{{scrollbar-color:{DARK_SCROLL_THUMB} {DARK_BASE}}}\
+             [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-detail::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-def-box::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-staircase-box::-webkit-scrollbar-thumb,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper::-webkit-scrollbar-thumb{{background:{DARK_SCROLL_THUMB}}}\
+             [data-jong-dark=\"1\"] .jong-structure-scroll::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-detail::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-def-box::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-staircase-box::-webkit-scrollbar-track,[data-jong-dark=\"1\"] .jong-tree-scroll-wrapper::-webkit-scrollbar-track{{background:{DARK_BASE}}}\
+             [data-jong-dark=\"1\"] .jong-panel-section h3{{border-bottom-color:{DARK_BORDER_STRONG}}}\
+             [data-jong-dark=\"1\"] .jong-legend-section-title{{color:{DARK_TEXT_SECONDARY}}}\
+             [data-jong-dark=\"1\"] .jong-clause-box.jong-clause-main,[data-jong-dark=\"1\"] .jong-clause-box.jong-clause-modifier{{border-color:{DARK_TEXT} !important}}\
+             [data-jong-dark=\"1\"] .jong-clause-label.jong-clause-main,[data-jong-dark=\"1\"] .jong-clause-label.jong-clause-modifier,[data-jong-dark=\"1\"] .jong-clause-connective.jong-clause-main,[data-jong-dark=\"1\"] .jong-clause-connective.jong-clause-modifier{{color:{DARK_TEXT} !important}}\
+             [data-jong-dark=\"1\"] .jong-legend-clause-badge.jong-clause-main,[data-jong-dark=\"1\"] .jong-legend-clause-badge.jong-clause-modifier{{color:{DARK_TEXT} !important;background:{DARK_SURFACE_HIGH} !important;border-color:{DARK_BORDER_STRONG} !important}}\
              [data-jong-dark=\"1\"] .ambiguous-badge{{color:#fbbf24 !important;border-color:#d97706 !important;background:#451a03 !important}}\
              [data-jong-dark=\"1\"] .resolved-badge{{color:#4ade80 !important;border-color:#22c55e !important;background:#052e16 !important}}\
              [data-jong-dark=\"1\"] .jong-verb-badge{{color:#7dd3fc !important;border-color:#0284c7 !important;background:#082f49 !important}}\
              </style>\
              <div class='jong-top-bar'>\
                 <div class='jong-drag-handle'></div>\
-                <button class='jong-legend' title='Legend'>\
+                {disambiguate_btn}\
+                <button class='jong-legend' title='Legend (toggle)'>\
                   <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'></circle><path d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'></path><line x1='12' y1='17' x2='12.01' y2='17'></line></svg>\
                 </button>\
                 <button class='jong-font-btn' data-font-delta='-1' title='Decrease text size' type='button'>A−</button>\
@@ -758,7 +806,8 @@ impl JongoController {
                   <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='18' y1='6' x2='6' y2='18'></line><line x1='6' y1='6' x2='18' y2='18'></line></svg>\
                 </button>\
               </div>\
-              <div class='jong-body'>{analysis_body}</div>"
+              <div class='jong-body'>{analysis_body}</div>",
+            disambiguate_btn = DISAMBIGUATE_BTN_HTML,
         );
         element.set_inner_html(&html);
         element.style().set_property("display", "flex").unwrap();
@@ -805,7 +854,7 @@ impl JongoController {
             .unwrap();
         font_cb.forget();
 
-        // delegated click: chunk row -> detail panel (with toggle deselect)
+        // delegated click: chunk row / detail card <-> sync selection (with toggle deselect)
         let detail_cb = {
             let container = element.clone();
             let chunk_data_for_click = chunk_data_rc.clone();
@@ -813,13 +862,19 @@ impl JongoController {
             Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
                 let Some(target) = e.target() else { return };
                 let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
-                let Ok(Some(row)) = el.closest("[data-chunk-id]") else { return };
-                let Some(idx) = row
-                    .get_attribute("data-chunk-id")
-                    .and_then(|s| s.parse::<usize>().ok())
-                else {
+
+                let idx = if let Ok(Some(row)) = el.closest("[data-chunk-id]") {
+                    row.get_attribute("data-chunk-id")
+                        .and_then(|s| s.parse::<usize>().ok())
+                } else if let Ok(Some(accordion)) = el.closest(".jong-accordion") {
+                    accordion
+                        .get_attribute("data-detail-id")
+                        .and_then(|s| s.parse::<usize>().ok())
+                } else {
                     return;
                 };
+                let Some(idx) = idx else { return };
+
                 let Ok(Some(detail_panel)) = container.query_selector(".jong-detail") else { return };
 
                 // Clear previous selection highlight on tree rows
@@ -848,11 +903,10 @@ impl JongoController {
                     }
                 }
 
-                // Toggle: if clicking the same row, deselect
+                // Toggle: if clicking the same token, deselect
                 let mut sel = selected_id.borrow_mut();
                 if *sel == Some(idx) {
                     *sel = None;
-                    // Restore all details
                     let cd = chunk_data_for_click.borrow();
                     let ctx = render_context_from_controller();
                     let all_html = render_all_details(&ctx, &cd);
@@ -860,14 +914,20 @@ impl JongoController {
                     return;
                 }
                 *sel = Some(idx);
-                let cls = row.get_attribute("class").unwrap_or_default();
-                let _ = row.set_attribute("class", &format!("{} jong-row-selected", cls));
 
-                // Scroll to and highlight the matching panel
-                let selector = format!("[data-detail-id='{}']", idx);
-                if let Ok(Some(accordion)) = detail_panel.query_selector(&selector) {
+                let row_selector = format!("[data-chunk-id='{idx}']");
+                if let Ok(Some(row)) = container.query_selector(&row_selector) {
+                    let cls = row.get_attribute("class").unwrap_or_default();
+                    let _ = row.set_attribute("class", &format!("{cls} jong-row-selected"));
+                    if let Ok(row_html) = row.dyn_into::<web_sys::HtmlElement>() {
+                        let _ = row_html.scroll_into_view_with_bool(false);
+                    }
+                }
+
+                let accordion_selector = format!("[data-detail-id='{idx}']");
+                if let Ok(Some(accordion)) = detail_panel.query_selector(&accordion_selector) {
                     let acc_cls = accordion.get_attribute("class").unwrap_or_default();
-                    let _ = accordion.set_attribute("class", &format!("{} jong-accordion-highlight", acc_cls));
+                    let _ = accordion.set_attribute("class", &format!("{acc_cls} jong-accordion-highlight"));
                     if let Ok(html_el) = accordion.dyn_into::<web_sys::HtmlElement>() {
                         if let Ok(detail_panel_html) = detail_panel.dyn_into::<web_sys::HtmlElement>() {
                             detail_panel_html.set_scroll_top(html_el.offset_top());
@@ -898,11 +958,11 @@ impl JongoController {
                 let btn_html = btn.dyn_into::<web_sys::HtmlElement>().unwrap();
 
                 wasm_bindgen_futures::spawn_local(async move {
-                    btn_html.set_inner_text("Loading...");
-                    btn_html.style().set_property("pointer-events", "none").unwrap();
-                    btn_html.style().set_property("opacity", "0.5").unwrap();
+                    btn_html.set_class_name("jong-disambiguate refine-ai-btn jong-disambiguate-loading");
+                    btn_html.set_inner_html(DISAMBIGUATE_SPINNER_HTML);
 
                     let res = fetch_llm(&prompt).await;
+                    btn_html.set_class_name("jong-disambiguate refine-ai-btn");
                     if let Some(res_str) = res.as_string() {
                         let json_str = strip_code_fences(&res_str);
                         console::log_1(&format!("LLM response: {}", json_str).into());
@@ -925,43 +985,35 @@ impl JongoController {
             ai_cb.forget();
         }
 
-        // Panel swap: restore analysis body + wire Back on panels
-        let wire_back_button = {
-            let element_for_back = element.clone();
-            let analysis_body_rc = analysis_body_rc.clone();
-            Rc::new(move |body: web_sys::Element| {
-                if let Ok(Some(back)) = body.query_selector(".jong-back") {
-                    let element_for_back = element_for_back.clone();
-                    let analysis_body_rc = analysis_body_rc.clone();
-                    let back_cb = Closure::<dyn FnMut()>::new(move || {
-                        if let Ok(Some(body)) = element_for_back.query_selector(".jong-body") {
-                            body.set_inner_html(&analysis_body_rc);
-                            if let Ok(html_body) = body.dyn_into::<web_sys::HtmlElement>() {
-                                let _ = html_body.style().set_property("display", "flex");
-                                let _ = html_body.style().set_property("flex-direction", "row");
-                                let _ = html_body.style().set_property("overflow", "hidden");
-                            }
-                        }
-                    });
-                    back.add_event_listener_with_callback("click", back_cb.as_ref().unchecked_ref()).unwrap();
-                    back_cb.forget();
-                }
-            })
-        };
-
-        // Legend button
+        // Legend button toggles legend panel ↔ analysis
         if let Ok(Some(legend_btn)) = element.query_selector(".jong-legend") {
             let element_legend = element.clone();
-            let wire_back = wire_back_button.clone();
+            let analysis_body_rc = analysis_body_rc.clone();
+            let legend_btn_for_cb = legend_btn.clone();
             let legend_cb = Closure::<dyn FnMut()>::new(move || {
-                if let Ok(Some(body)) = element_legend.query_selector(".jong-body") {
-                    body.set_inner_html(&render_legend_panel());
-                    if let Ok(html_body) = body.clone().dyn_into::<web_sys::HtmlElement>() {
+                let Ok(Some(body)) = element_legend.query_selector(".jong-body") else { return };
+                let on_legend = body.query_selector(".jong-panel").ok().flatten().is_some();
+                if on_legend {
+                    body.set_inner_html(&analysis_body_rc);
+                    if let Ok(html_body) = body.dyn_into::<web_sys::HtmlElement>() {
+                        let _ = html_body.style().set_property("display", "flex");
+                        let _ = html_body.style().set_property("flex-direction", "row");
+                        let _ = html_body.style().set_property("overflow", "hidden");
+                    }
+                    let _ = legend_btn_for_cb.class_list().remove_1("jong-legend-active");
+                    CONTROLLER.with(|c| {
+                        if let Ok(ctrl) = c.try_borrow() {
+                            ctrl.apply_font_size_all();
+                        }
+                    });
+                } else {
+                    body.set_inner_html(&render_legend_panel(&render_context_from_controller()));
+                    if let Ok(html_body) = body.dyn_into::<web_sys::HtmlElement>() {
                         let _ = html_body.style().set_property("display", "flex");
                         let _ = html_body.style().set_property("flex-direction", "column");
                         let _ = html_body.style().set_property("overflow", "hidden");
                     }
-                    wire_back(body);
+                    let _ = legend_btn_for_cb.class_list().add_1("jong-legend-active");
                 }
             });
             legend_btn.add_event_listener_with_callback("click", legend_cb.as_ref().unchecked_ref()).unwrap();
@@ -1375,9 +1427,7 @@ fn render_structure(ctx: &RenderContext, sentence: &Sentence, sentence_str: &str
 
     let escaped = html_escape(sentence_str);
     html.push_str(&format!(
-        "<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px'>\
-         <div class='jong-sentence-text' data-font-tier='title' style='font-size:{title_px}px;font-weight:600;line-height:1.4;flex:1;min-width:0;word-break:break-word'>{escaped}</div>\
-         <button class='refine-ai-btn'>Disambiguate</button></div>"
+        "<div class='jong-sentence-text' data-font-tier='title' style='font-size:{title_px}px;font-weight:600;line-height:1.4;margin-bottom:8px;word-break:break-word'>{escaped}</div>"
     ));
 
     html.push_str("<div class='jong-tree-scroll-wrapper'>");
@@ -1390,42 +1440,99 @@ fn render_structure(ctx: &RenderContext, sentence: &Sentence, sentence_str: &str
     html
 }
 
-fn render_legend_panel() -> String {
-    let mut html = String::from(
-        "<div class='jong-panel'>\
-           <button class='jong-back'>← Back</button>\
-           <div style='font-size:14px;font-weight:600;margin-bottom:4px'>Legend</div>\
-           <div class='jong-hint' style='margin-bottom:8px'>Reference for labels used in analysis</div>"
+fn render_legend_panel(ctx: &RenderContext) -> String {
+    let title_px = scaled_font_px(ctx.font_size, "title");
+    let hint_px = scaled_font_px(ctx.font_size, "detail-xs");
+    let section_px = scaled_font_px(ctx.font_size, "legend-section");
+    let badge_px = scaled_font_px(ctx.font_size, "badge");
+    let body_px = scaled_font_px(ctx.font_size, "detail");
+    let clause_px = scaled_font_px(ctx.font_size, "clause-label");
+
+    let mut html = format!(
+        "<div class='jong-panel' data-font-tier='detail' style='font-size:{body_px}px'>\
+           <div data-font-tier='title' style='font-size:{title_px}px;font-weight:600;margin-bottom:4px'>Legend</div>\
+           <div class='jong-hint' data-font-tier='detail-xs' style='font-size:{hint_px}px;margin-bottom:8px'>Reference for labels used in analysis</div>"
     );
 
-    html.push_str("<div class='jong-panel-section'><h3>Particle roles</h3>");
-    for role in ParticleRole::all() {
+    html.push_str(&format!(
+        "<div class='jong-panel-section'><h3 class='jong-legend-section-title' data-font-tier='legend-section' style='font-size:{section_px}px'>Parts of speech</h3>"
+    ));
+    const POS_LEGEND: &[(PartOfSpeech, &str)] = &[
+        (PartOfSpeech::Noun, "Nouns, pronouns, and proper nouns."),
+        (PartOfSpeech::Verb, "Action and state verbs."),
+        (PartOfSpeech::Adjective, "い-adjectives and な-adjectives."),
+        (PartOfSpeech::Adverb, "Words that modify verbs or adjectives."),
+        (PartOfSpeech::AuxiliaryVerb, "Helper verbs attached to main verbs."),
+        (PartOfSpeech::Particle, "Grammatical particles (は, が, を, etc.)."),
+        (PartOfSpeech::Conjunction, "Words that connect clauses or phrases."),
+        (PartOfSpeech::Interjection, "Exclamations and interjections."),
+        (PartOfSpeech::Others, "Other or unclassified word types."),
+    ];
+    let mut pos_entries: Vec<_> = POS_LEGEND.iter().copied().collect();
+    pos_entries.sort_by(|a, b| format!("{:?}", a.0).cmp(&format!("{:?}", b.0)));
+    for (pos, explanation) in pos_entries {
+        let pos_class = pos_badge_class(pos);
+        let label = format!("{:?}", pos);
         html.push_str(&format!(
             "<div class='jong-legend-row'>\
-               <span class='jong-legend-badge'>{}</span>\
-               <span>{}</span>\
-             </div>",
-            role.badge(),
-            role.explanation()
+               <span class='jong-pos-badge {pos_class}' data-font-tier='badge' style='font-size:{badge_px}px'>{label}</span>\
+               <span data-font-tier='detail' style='font-size:{body_px}px'>{explanation}</span>\
+             </div>"
         ));
     }
     html.push_str("</div>");
 
-    html.push_str("<div class='jong-panel-section'><h3>Clause relations</h3>");
-    for rel in ClauseRelation::all() {
+    html.push_str(&format!(
+        "<div class='jong-panel-section'><h3 class='jong-legend-section-title' data-font-tier='legend-section' style='font-size:{section_px}px'>Particle roles</h3>"
+    ));
+    let mut particle_roles: Vec<(&str, &str, bool)> = ParticleRole::all()
+        .iter()
+        .map(|role| (role.badge(), role.explanation(), false))
+        .collect();
+    particle_roles.push((
+        "Ambiguous",
+        "Cannot be determined by rule-based parsing alone.",
+        true,
+    ));
+    particle_roles.sort_by_key(|(badge, _, _)| *badge);
+    for (badge, explanation, ambiguous) in particle_roles {
+        let class = if ambiguous {
+            "ambiguous-badge jong-role-badge"
+        } else {
+            "resolved-badge jong-role-badge"
+        };
         html.push_str(&format!(
             "<div class='jong-legend-row'>\
-               <span class='jong-legend-badge' style='border-color:{color};color:{color}'>{label}</span>\
-               <span>{explanation}</span>\
-             </div>",
-            color = rel.color(),
-            label = rel.label(),
-            explanation = rel.explanation()
+               <span class='{class}' data-font-tier='badge' style='font-size:{badge_px}px'>{badge}</span>\
+               <span data-font-tier='detail' style='font-size:{body_px}px'>{explanation}</span>\
+             </div>"
         ));
     }
     html.push_str("</div>");
 
-    html.push_str("<div class='jong-panel-section'><h3>Verb conjugations</h3>");
+    html.push_str(&format!(
+        "<div class='jong-panel-section'><h3 class='jong-legend-section-title' data-font-tier='legend-section' style='font-size:{section_px}px'>Clause relations</h3>"
+    ));
+    let mut clause_relations: Vec<_> = ClauseRelation::all().iter().collect();
+    clause_relations.sort_by_key(|rel| rel.label());
+    for rel in clause_relations {
+        let color = rel.color();
+        let rel_class = clause_relation_theme_class(rel);
+        let badge_style = legend_clause_badge_style(color);
+        html.push_str(&format!(
+            "<div class='jong-legend-row'>\
+               <span class='jong-legend-clause-badge {rel_class}' data-font-tier='clause-label' style='font-size:{clause_px}px;{badge_style}'>{}</span>\
+               <span data-font-tier='detail' style='font-size:{body_px}px'>{}</span>\
+             </div>",
+            rel.label(),
+            rel.explanation()
+        ));
+    }
+    html.push_str("</div>");
+
+    html.push_str(&format!(
+        "<div class='jong-panel-section'><h3 class='jong-legend-section-title' data-font-tier='legend-section' style='font-size:{section_px}px'>Verb conjugations</h3>"
+    ));
     const CONJUGATIONS: &[&str] = &[
         "Negative",
         "Past",
@@ -1438,12 +1545,15 @@ fn render_legend_panel() -> String {
         "Conditional",
         "Negative-imperative",
     ];
-    for label in CONJUGATIONS {
+    let mut conjugations: Vec<&str> = CONJUGATIONS.to_vec();
+    conjugations.sort();
+    for label in conjugations {
         html.push_str(&format!(
             "<div class='jong-legend-row'>\
-               <span class='jong-legend-badge'>{label}</span>\
-               <span>{}</span>\
+               <span class='jong-verb-badge' data-font-tier='badge' style='font-size:{badge_px}px'>{}</span>\
+               <span data-font-tier='detail' style='font-size:{body_px}px'>{}</span>\
              </div>",
+            label,
             conjugation_explanation(label)
         ));
     }
@@ -1455,11 +1565,12 @@ fn render_clause(ctx: &RenderContext, clause: &Clause, chunk_data: &mut Vec<Chun
     let color = clause.relation.color();
     let label = clause.relation.label();
     let tip = clause.relation.explanation();
+    let rel_class = clause_relation_theme_class(&clause.relation);
     let label_px = scaled_font_px(ctx.font_size, "clause-label");
     let conn_px = scaled_font_px(ctx.font_size, "connective");
     let mut html = format!(
-        "<div style='border:1px solid {color};border-radius:4px;margin-bottom:10px;padding:6px 8px'>\
-         <div data-font-tier='clause-label' style='font-size:{label_px}px;color:{color};margin-bottom:6px'{}>{label}</div>",
+        "<div class='jong-clause-box {rel_class}' style='border:1px solid {color};border-radius:4px;margin-bottom:10px;padding:6px 8px'>\
+         <div class='jong-clause-label {rel_class}' data-font-tier='clause-label' style='font-size:{label_px}px;color:{color};margin-bottom:6px'{}>{label}</div>",
         tip_attrs(ctx, tip)
     );
     html.push_str(&render_chunk_group(ctx, &clause.predicate, "", "", chunk_data));
@@ -1467,7 +1578,7 @@ fn render_clause(ctx: &RenderContext, clause: &Clause, chunk_data: &mut Vec<Chun
         let id = chunk_data.len();
         chunk_data.push((conn.clone(), None, None, None, None));
         html.push_str(&format!(
-            "<div class='jong-row' data-chunk-id='{id}' data-font-tier='connective' style='margin-top:6px;font-size:{conn_px}px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
+            "<div class='jong-row jong-clause-connective {rel_class}' data-chunk-id='{id}' data-font-tier='connective' style='margin-top:6px;font-size:{conn_px}px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
             conn.full
         ));
     }
@@ -1861,7 +1972,7 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
         ));
         html.push_str("<div class='jong-particle-row'>");
         html.push_str(&format!(
-            "<span class='jong-particle-chip'>{}</span>",
+            "<span class='jong-particle-chip' data-font-tier='detail-head' style='font-size:{head_px}px'>{}</span>",
             html_escape(&p.full)
         ));
         match role {
@@ -1898,7 +2009,7 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
             ));
             html.push_str("<div class='jong-particle-row'>");
             html.push_str(&format!(
-                "<span class='jong-particle-chip'>{}</span>",
+                "<span class='jong-particle-chip' data-font-tier='detail-head' style='font-size:{head_px}px'>{}</span>",
                 html_escape(&sp.full)
             ));
             html.push_str("</div>");
