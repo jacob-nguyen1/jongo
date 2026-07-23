@@ -1388,6 +1388,12 @@ fn render_row(
             r.badge()
         ));
     }
+    if let Some(conj_tag) = word.verb_print() {
+        html.push_str(&format!(
+            " <span class='jong-verb-badge' style='font-size:10px;color:#05a;border:1px solid #05a;border-radius:3px;padding:0 4px'>{}</span>",
+            conj_tag
+        ));
+    }
     html.push_str("</div>");
     html
 }
@@ -1546,6 +1552,24 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, secondary_parti
                  <div style='font-weight:600'>Conjugation</div><div>{}</div></div>",
                 flags.join(", ")
             ));
+        }
+    }
+
+    if let Some(staircase) = &word.staircase {
+        if staircase.len() > 1 {
+            html.push_str("<div class='jong-detail-section' style='margin-top:10px;padding-top:6px'>");
+            html.push_str("<div style='font-weight:600;margin-bottom:4px'>Conjugation Breakdown:</div>");
+            html.push_str("<div style='max-height:150px;overflow-y:auto;border:1px solid var(--jong-border-color, #ccc);padding:8px;margin-top:2px'>");
+            
+            for step in staircase {
+                html.push_str(&format!(
+                    "<div style='margin-bottom:2px'><span style='font-weight:600'>{}</span> <span style='color:var(--jong-muted-color,#666)'>({})</span></div>",
+                    html_escape(&step.text),
+                    html_escape(&step.description)
+                ));
+            }
+            
+            html.push_str("</div></div>");
         }
     }
 
