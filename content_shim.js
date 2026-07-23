@@ -1,6 +1,6 @@
 (async () => {
   try {
-    const { enabled = true, darkMode = false, furigana = true, fontSize = 16 } = await chrome.storage.local.get([
+    const { enabled = true, darkMode = false, furigana = true, fontSize = 20 } = await chrome.storage.local.get([
       "enabled",
       "darkMode",
       "furigana",
@@ -54,7 +54,7 @@
     if (!enabled) set_enabled(false);
     set_dark_mode(!!darkMode);
     set_furigana(!!furigana);
-    set_font_size(fontSize);
+    set_font_size(Number(fontSize) || 20);
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
@@ -68,7 +68,7 @@
         set_furigana(changes.furigana.newValue ?? true);
       }
       if (changes.fontSize !== undefined) {
-        set_font_size(changes.fontSize.newValue ?? 16);
+        set_font_size(Number(changes.fontSize.newValue) || 20);
       }
     });
   } catch (e) {

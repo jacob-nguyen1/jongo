@@ -59,34 +59,34 @@ impl ProcToken{
             Some(conj) => {
                 let mut parts = Vec::new();
                 if conj.negative {
-                    parts.push("negative");
+                    parts.push("Negative");
                 }
                 if conj.past {
-                    parts.push("past");
+                    parts.push("Past");
                 }
                 if conj.continuous {
-                    parts.push("continuous");
+                    parts.push("Continuous");
                 }
                 if conj.teform {
-                    parts.push("teform");
+                    parts.push("Te-form");
                 }
                 if conj.desiderative {
-                    parts.push("desiderative");
+                    parts.push("Desiderative");
                 }
                 if conj.volitional {
-                    parts.push("volitional");
+                    parts.push("Volitional");
                 }
                 if conj.potential {
-                    parts.push("potential");
+                    parts.push("Potential");
                 }
                 if conj.causative {
-                    parts.push("causative");
+                    parts.push("Causative");
                 }
                 if conj.conditional {
-                    parts.push("conditional");
+                    parts.push("Conditional");
                 }
                 if conj.negimperative {
-                    parts.push("negimperative");
+                    parts.push("Negative-imperative");
                 }
                 if parts.is_empty() {
                     None

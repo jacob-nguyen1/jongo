@@ -11,7 +11,7 @@
       }
 
       body {
-        width: 280px;
+        width: 300px;
         padding: 16px;
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 13px;
@@ -20,12 +20,44 @@
       }
 
       .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         margin-bottom: 16px;
       }
 
       .name {
         font-size: 16px;
         font-weight: 600;
+      }
+
+      .icon-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        background: #f8f8f8;
+        color: #444;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .icon-btn:hover {
+        background: #eef2f7;
+        border-color: #ccc;
+      }
+
+      .icon-btn.active {
+        background: #e8f4ef;
+        border-color: #4a9;
+        color: #2a7;
+      }
+
+      .hidden {
+        display: none !important;
       }
 
       .toggle-row {
@@ -35,6 +67,7 @@
         padding: 12px;
         background: #f5f5f5;
         border-radius: 8px;
+        margin-bottom: 10px;
       }
 
       .switch {
@@ -92,6 +125,30 @@
         color: #888;
       }
 
+      .action-btn {
+        width: 100%;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        background: #fafafa;
+        color: #333;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: left;
+        transition: background 0.15s;
+      }
+
+      .action-btn:hover {
+        background: #f0f0f0;
+      }
+
+      .action-btn.open {
+        border-color: #4a9;
+        background: #f0faf5;
+      }
+
       .hint {
         margin-top: 12px;
         color: #666;
@@ -99,19 +156,22 @@
       }
 
       .ai-config {
-        margin-top: 20px;
-        padding-top: 16px;
-        border-top: 1px solid #eee;
+        margin-bottom: 8px;
+        padding: 12px;
+        background: #f9f9f9;
+        border: 1px solid #eee;
+        border-radius: 8px;
       }
 
       .ai-config h3 {
-        font-size: 13px;
-        margin-bottom: 8px;
-        color: #333;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #555;
       }
 
       .input-group {
-        margin-bottom: 12px;
+        margin-bottom: 10px;
       }
 
       .input-group label {
@@ -139,7 +199,7 @@
         cursor: pointer;
         font-weight: 500;
       }
-      
+
       button.save-btn:hover {
         background: #398;
       }
@@ -152,35 +212,178 @@
         opacity: 0;
         transition: opacity 0.3s;
       }
+
+      .settings-view h3 {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 14px;
+      }
+
+      .back-btn {
+        background: none;
+        border: none;
+        color: #4a9;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 0;
+        margin-bottom: 12px;
+      }
+
+      .settings-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        background: #f5f5f5;
+        border-radius: 8px;
+        margin-bottom: 8px;
+      }
+
+      .settings-label {
+        font-weight: 500;
+      }
+
+      .settings-hint {
+        font-size: 11px;
+        color: #777;
+        margin-top: 2px;
+      }
+
+      /* Dark mode — matches analysis window gray palette (#3c3c3c) */
+      body[data-jong-dark="1"] {
+        background: #3c3c3c;
+        color: #e8e8e8;
+      }
+
+      body[data-jong-dark="1"] .icon-btn {
+        background: #4a4a4a;
+        border-color: #666;
+        color: #e0e0e0;
+      }
+
+      body[data-jong-dark="1"] .icon-btn:hover {
+        background: #555;
+        border-color: #777;
+      }
+
+      body[data-jong-dark="1"] .icon-btn.active {
+        background: #2d4a3e;
+        border-color: #4a9;
+        color: #8fd4b0;
+      }
+
+      body[data-jong-dark="1"] .toggle-row,
+      body[data-jong-dark="1"] .settings-row {
+        background: #4a4a4a;
+      }
+
+      body[data-jong-dark="1"] .status.off {
+        color: #aaa;
+      }
+
+      body[data-jong-dark="1"] .hint,
+      body[data-jong-dark="1"] .settings-hint,
+      body[data-jong-dark="1"] .input-group label,
+      body[data-jong-dark="1"] .ai-config h3 {
+        color: #ccc;
+      }
+
+      body[data-jong-dark="1"] .action-btn {
+        background: #4a4a4a;
+        border-color: #666;
+        color: #e8e8e8;
+      }
+
+      body[data-jong-dark="1"] .action-btn:hover {
+        background: #555;
+      }
+
+      body[data-jong-dark="1"] .action-btn.open {
+        background: #2d4a3e;
+        border-color: #4a9;
+      }
+
+      body[data-jong-dark="1"] .ai-config {
+        background: #4a4a4a;
+        border-color: #666;
+      }
+
+      body[data-jong-dark="1"] .input-group input {
+        background: #333;
+        border-color: #666;
+        color: #e8e8e8;
+      }
+
+      body[data-jong-dark="1"] .back-btn {
+        color: #8fd4b0;
+      }
     </style>
   </head>
   <body>
     <div class="header">
       <span class="name">Jongo</span>
+      <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
     </div>
 
-    <div class="toggle-row">
-      <label class="switch" title="Toggle Jongo">
-        <input type="checkbox" id="toggle" />
-        <span class="slider"></span>
-      </label>
-      <span id="status" class="status on">Enabled</span>
+    <div id="main-view">
+      <div class="toggle-row">
+        <label class="switch" title="Toggle Jongo">
+          <input type="checkbox" id="toggle" />
+          <span class="slider"></span>
+        </label>
+        <span id="status" class="status on">Enabled</span>
+      </div>
+
+      <button class="action-btn" id="ai-setup-btn" type="button">AI setup</button>
+
+      <div id="ai-config" class="ai-config hidden">
+        <h3>AI Disambiguation</h3>
+        <div class="input-group">
+          <label for="llm-url">Endpoint URL</label>
+          <input type="text" id="llm-url" placeholder="https://api.openai.com/v1/chat/completions" />
+        </div>
+        <div class="input-group">
+          <label for="llm-key">API Key</label>
+          <input type="password" id="llm-key" placeholder="sk-..." />
+        </div>
+        <button class="save-btn" id="save-config" type="button">Save</button>
+        <div id="save-status">Saved!</div>
+      </div>
+
+      <p class="hint">Hold <strong>Shift</strong> and hover over Japanese text to analyze a sentence. Use <strong>A−</strong> / <strong>A+</strong> in the analysis window to adjust text size.</p>
     </div>
 
-    <p class="hint">Hold <strong>Shift</strong> and hover over Japanese text to analyze a sentence.</p>
+    <div id="settings-view" class="settings-view hidden">
+      <button class="back-btn" id="settings-back" type="button">← Back</button>
+      <h3>Settings</h3>
 
-    <div class="ai-config">
-      <h3>AI Disambiguation</h3>
-      <div class="input-group">
-        <label for="llm-url">Endpoint URL</label>
-        <input type="text" id="llm-url" placeholder="https://api.openai.com/v1/chat/completions" />
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Dark mode</div>
+          <div class="settings-hint">Extension popup and analysis windows</div>
+        </div>
+        <label class="switch" title="Toggle dark mode">
+          <input type="checkbox" id="dark-toggle" />
+          <span class="slider"></span>
+        </label>
       </div>
-      <div class="input-group">
-        <label for="llm-key">API Key</label>
-        <input type="password" id="llm-key" placeholder="sk-..." />
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Furigana</div>
+          <div class="settings-hint">Readings above kanji</div>
+        </div>
+        <label class="switch" title="Toggle furigana">
+          <input type="checkbox" id="furigana-toggle" />
+          <span class="slider"></span>
+        </label>
       </div>
-      <button class="save-btn" id="save-config">Save Settings</button>
-      <div id="save-status">Saved!</div>
     </div>
 
     <script src="popup.js"></script>

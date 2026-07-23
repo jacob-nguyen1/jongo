@@ -20,6 +20,9 @@ const MIN_WINDOW_WIDTH: f64 = 360.0;
 const MIN_WINDOW_HEIGHT: f64 = 200.0;
 const RESIZE_EDGE: f64 = 10.0;
 const BASE_Z_INDEX: u32 = 10_000;
+const DEFAULT_FONT_SIZE: u32 = 20;
+const MIN_FONT_SIZE: u32 = 12;
+const MAX_FONT_SIZE: u32 = 32;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ResizeCorner {
@@ -140,7 +143,6 @@ fn apply_prompt_theme(el: &web_sys::HtmlElement, dark: bool) {
 const PROMPT_FADE_MS: i32 = 160;
 
 fn fade_remove_prompt(el: web_sys::HtmlElement) {
-    let _ = el.class_list().remove_1("jong-prompt-enter");
     let _ = el.class_list().add_1("jong-prompt-leave");
     let Some(window) = web_sys::window() else {
         el.remove();
@@ -159,13 +161,11 @@ fn fade_remove_prompt(el: web_sys::HtmlElement) {
 fn prompt_host_html() -> &'static str {
     "\
 <style>\
-.jong-prompt-host{position:absolute;z-index:10000;pointer-events:auto;opacity:0;\
-transform:translateX(-50%) translateY(6px) scale(0.96);\
-transition:opacity .15s ease,transform .15s ease}\
-.jong-prompt-host.jong-prompt-above{transform:translateX(-50%) translateY(-6px) scale(0.96)}\
-.jong-prompt-host.jong-prompt-enter{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}\
+.jong-prompt-host{position:absolute;z-index:10000;pointer-events:auto;opacity:1;\
+transform:translateX(-50%)}\
 .jong-prompt-host.jong-prompt-leave{opacity:0;pointer-events:none;\
-transform:translateX(-50%) translateY(4px) scale(0.96)}\
+transform:translateX(-50%) translateY(4px) scale(0.96);\
+transition:opacity .15s ease,transform .15s ease}\
 .jong-prompt-host.jong-prompt-above.jong-prompt-leave{\
 transform:translateX(-50%) translateY(-4px) scale(0.96)}\
 .jong-prompt-btn{appearance:none;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;\
@@ -182,6 +182,45 @@ box-shadow:0 4px 16px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.2)}\
 [data-jong-dark=\"1\"] .jong-prompt-btn:active{transform:translateY(0)}\
 </style>\
 <button type='button' class='jong-prompt-btn' title='Analyze with Jongo'>jong</button>"
+}
+
+fn scaled_font_px(base: u32, tier: &str) -> u32 {
+    let factor: f32 = match tier {
+        "mod" => 0.9,
+        "title" | "detail-sub" => 0.8125,
+        "detail" => 0.75,
+        "detail-xs" => 0.6875,
+        _ => 1.0,
+    };
+    ((base as f32 * factor).round() as u32).max(8)
+}
+
+#[derive(Clone, Copy)]
+struct RenderContext {
+    font_size: u32,
+    furigana: bool,
+}
+
+impl Default for RenderContext {
+    fn default() -> Self {
+        Self {
+            font_size: DEFAULT_FONT_SIZE,
+            furigana: true,
+        }
+    }
+}
+
+fn render_context_from_controller() -> RenderContext {
+    CONTROLLER.with(|c| {
+        if let Ok(b) = c.try_borrow() {
+            RenderContext {
+                font_size: b.font_size,
+                furigana: b.furigana,
+            }
+        } else {
+            RenderContext::default()
+        }
+    })
 }
 
 fn html_escape(s: &str) -> String {
@@ -242,7 +281,7 @@ impl JongoController {
             enabled: true,
             dark_mode: false,
             furigana: true,
-            font_size: 16,
+            font_size: DEFAULT_FONT_SIZE,
             prompt: None,
             analyses: Vec::new(),
             next_id: 0,
@@ -267,6 +306,30 @@ impl JongoController {
     fn set_dark_mode(&mut self, on: bool) {
         self.dark_mode = on;
         self.apply_dark_mode_all();
+    }
+
+    fn apply_font_size_all(&self) {
+        let base = self.font_size;
+        for a in &self.analyses {
+            let Ok(nodes) = a.element.query_selector_all("[data-font-tier]") else { continue };
+            for i in 0..nodes.length() {
+                let Some(node) = nodes.item(i) else { continue };
+                let Ok(el) = node.dyn_into::<web_sys::HtmlElement>() else { continue };
+                let tier = el.get_attribute("data-font-tier").unwrap_or_default();
+                let size = scaled_font_px(base, &tier);
+                let _ = el.style().set_property("font-size", &format!("{size}px"));
+            }
+        }
+    }
+
+    fn adjust_font_size(&mut self, delta: i32) {
+        let new = (self.font_size as i32 + delta).clamp(MIN_FONT_SIZE as i32, MAX_FONT_SIZE as i32) as u32;
+        if new == self.font_size {
+            return;
+        }
+        self.font_size = new;
+        persist_setting("fontSize", &JsValue::from_f64(new as f64));
+        self.apply_font_size_all();
     }
 
     fn dismiss_prompt(&mut self) {
@@ -356,20 +419,12 @@ impl JongoController {
         }
         console::log_1(&format!("Sentence: {}", sentence_str).into());
 
-        // Already showing for this sentence — keep the button (avoids restarting enter animation)
-        if let Some(existing) = &self.prompt {
-            if existing.get_attribute("data-jong-sentence").as_deref() == Some(sentence_str.as_str()) {
-                return;
-            }
-        }
-
         let element = document
             .create_element("div")
             .unwrap()
             .dyn_into::<web_sys::HtmlElement>()
             .unwrap();
         element.set_class_name("jong-prompt-host");
-        let _ = element.set_attribute("data-jong-sentence", &sentence_str);
 
         let scroll_x = window.scroll_x().unwrap_or(0.0);
         let scroll_y = window.scroll_y().unwrap_or(0.0);
@@ -401,20 +456,10 @@ impl JongoController {
         element.set_inner_html(prompt_host_html());
         apply_prompt_theme(&element, self.dark_mode);
 
-        // Replace previous prompt without fade (avoids stacked ghosts while Shift-scanning)
+        // Replace previous prompt immediately so Shift+mousemove can track the caret
         self.dismiss_prompt_immediate();
 
         document.body().unwrap().append_child(&element).unwrap();
-
-        // Enter animation on next frame so the initial opacity:0 state paints first
-        {
-            let el = element.clone();
-            let enter_cb = Closure::once(move || {
-                let _ = el.class_list().add_1("jong-prompt-enter");
-            });
-            let _ = window.request_animation_frame(enter_cb.as_ref().unchecked_ref());
-            enter_cb.forget();
-        }
 
         // Clicks inside the host must not bubble to the document dismiss listener
         let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
@@ -467,13 +512,17 @@ impl JongoController {
         element.style().set_property("overflow", "hidden").unwrap();
         let tokens = grammar::analyze_sentence(sentence);
         let mut chunk_data: Vec<ChunkData> = Vec::new();
+        let ctx = RenderContext {
+            font_size: self.font_size,
+            furigana: self.furigana,
+        };
         let left = crate::sentence::build_sentence(tokens)
-            .map(|s| render_structure(&s, sentence, &mut chunk_data))
+            .map(|s| render_structure(&ctx, &s, sentence, &mut chunk_data))
             .unwrap_or_else(|| "<div>could not parse</div>".to_string());
 
         let chunk_data_rc = Rc::new(RefCell::new(chunk_data));
 
-        let all_details = render_all_details(&chunk_data_rc.borrow());
+        let all_details = render_all_details(&ctx, &chunk_data_rc.borrow());
         let analysis_body = format!(
             "<div class='jong-structure-scroll'><div class='jong-structure-inner'>{left}</div></div>\
              <div class='jong-detail'>{all_details}</div>"
@@ -482,8 +531,6 @@ impl JongoController {
 
         let html = format!(
             "<style>\
-             /* Dark-mode global override: force solid black UI when data-jong-dark is set */\
-             [data-jong-dark=\"1\"] * {{ background: #000 !important; color: #fff !important; border-color: #111 !important; }}\
              .jong-row{{cursor:pointer;border-radius:3px;white-space:nowrap}}\
              .jong-row:hover{{background:#eef2f7}}\
              .jong-row-selected{{background:#dbeafe}}\
@@ -491,8 +538,8 @@ impl JongoController {
              .jong-drag-handle{{flex:1;cursor:move;display:flex;align-items:center;padding:0 12px;user-select:none}}\
              .jong-legend{{background:#fefce8;color:#ca8a04;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
              .jong-legend:hover{{background:#fef9c3;color:#a16207}}\
-             .jong-settings{{background:#f0f4f8;color:#3b82f6;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
-             .jong-settings:hover{{background:#dbeafe;color:#2563eb}}\
+             .jong-font-btn{{background:#f8fafc;color:#475569;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;min-width:32px;transition:background 0.2s}}\
+             .jong-font-btn:hover{{background:#e2e8f0;color:#1e293b}}\
              .jong-close{{background:#fef2f2;color:#ef4444;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
              .jong-close:hover{{background:#fee2e2;color:#dc2626}}\
              .jong-body{{display:flex;gap:16px;flex:1;min-height:0;padding:8px 8px 8px 0;box-sizing:border-box;overflow:hidden}}\
@@ -510,6 +557,7 @@ impl JongoController {
              .jong-role-badge{{font-size:10px;color:#666;border:1px solid #ccc;border-radius:3px;padding:0 4px}}\
              .ambiguous-badge{{color:#b45309 !important;border-color:#f59e0b !important;background:#fffbeb !important;font-weight:600}}\
              .resolved-badge{{color:#15803d !important;border-color:#22c55e !important;background:#f0fdf4 !important;font-weight:600}}\
+             .jong-verb-badge{{font-size:10px;color:#0369a1;border:1px solid #0ea5e9;background:#f0f9ff;border-radius:3px;padding:0 4px;font-weight:600}}\
              .refine-ai-btn{{background:#f0f0f0;border:1px solid #ccc;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;color:#333;font-weight:500;flex-shrink:0}}\
              .jong-def-box{{max-height:150px;overflow-y:auto;background:#fafafa;border:1px solid #eee;border-radius:4px;padding:8px 8px 8px 24px;margin-top:2px}}\
              .jong-def-box ol{{margin:0;padding:0;color:#333}}\
@@ -529,13 +577,6 @@ impl JongoController {
              .jong-panel-section h3{{font-size:13px;margin:0 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}}\
              .jong-legend-row{{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}}\
              .jong-legend-badge{{flex-shrink:0;min-width:110px;font-size:10px;border:1px solid #ccc;border-radius:3px;padding:1px 6px;color:#444}}\
-             .jong-settings-row{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#f5f5f5;border-radius:8px}}\
-             .jong-switch{{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}}\
-             .jong-switch input{{opacity:0;width:0;height:0}}\
-             .jong-slider{{position:absolute;inset:0;background:#ccc;border-radius:24px;cursor:pointer;transition:background 0.2s}}\
-             .jong-slider::before{{content:\"\";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform 0.2s}}\
-             .jong-switch input:checked + .jong-slider{{background:#4a9}}\
-             .jong-switch input:checked + .jong-slider::before{{transform:translateX(20px)}}\
              .jong-back{{background:none;border:none;color:#4a9;cursor:pointer;font-size:12px;padding:0;margin-bottom:10px}}\
              [data-jong-dark=\"1\"] .jong-row:hover{{background:#4a4a4a}}\
              [data-jong-dark=\"1\"] .jong-row-selected{{background:#334155}}\
@@ -543,8 +584,8 @@ impl JongoController {
              [data-jong-dark=\"1\"] .jong-drag-handle{{color:#bbb}}\
              [data-jong-dark=\"1\"] .jong-legend{{background:#3b2d12;color:#facc15;border-left-color:#444}}\
              [data-jong-dark=\"1\"] .jong-legend:hover{{background:#543e17;color:#fde047}}\
-             [data-jong-dark=\"1\"] .jong-settings{{background:#1e293b;color:#60a5fa;border-left-color:#444}}\
-             [data-jong-dark=\"1\"] .jong-settings:hover{{background:#334155;color:#93c5fd}}\
+             [data-jong-dark=\"1\"] .jong-font-btn{{background:#334155;color:#cbd5e1;border-left-color:#444}}\
+             [data-jong-dark=\"1\"] .jong-font-btn:hover{{background:#475569;color:#f1f5f9}}\
              [data-jong-dark=\"1\"] .jong-close{{background:#451a1a;color:#f87171;border-left-color:#444}}\
              [data-jong-dark=\"1\"] .jong-close:hover{{background:#7f1d1d;color:#fca5a5}}\
              [data-jong-dark=\"1\"] .jong-detail{{border-left-color:#666}}\
@@ -569,19 +610,17 @@ impl JongoController {
              [data-jong-dark=\"1\"] .jong-panel::-webkit-scrollbar-track{{background:#333}}\
              [data-jong-dark=\"1\"] .jong-panel-section h3{{border-bottom-color:#666}}\
              [data-jong-dark=\"1\"] .jong-legend-badge{{border-color:#777;color:#ddd}}\
-             [data-jong-dark=\"1\"] .jong-settings-row{{background:#4a4a4a}}\
-             [data-jong-dark=\"1\"] .jong-slider{{background:#666}}\
              [data-jong-dark=\"1\"] .ambiguous-badge{{color:#fbbf24 !important;border-color:#d97706 !important;background:#451a03 !important}}\
              [data-jong-dark=\"1\"] .resolved-badge{{color:#4ade80 !important;border-color:#22c55e !important;background:#052e16 !important}}\
+             [data-jong-dark=\"1\"] .jong-verb-badge{{color:#7dd3fc !important;border-color:#0284c7 !important;background:#082f49 !important}}\
              </style>\
              <div class='jong-top-bar'>\
                 <div class='jong-drag-handle'></div>\
                 <button class='jong-legend' title='Legend'>\
                   <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'></circle><path d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'></path><line x1='12' y1='17' x2='12.01' y2='17'></line></svg>\
                 </button>\
-                <button class='jong-settings' title='Settings'>\
-                  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='3'></circle><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path></svg>\
-                </button>\
+                <button class='jong-font-btn' data-font-delta='-1' title='Decrease text size' type='button'>A−</button>\
+                <button class='jong-font-btn' data-font-delta='1' title='Increase text size' type='button'>A+</button>\
                 <button class='jong-close' title='Close'>\
                   <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='18' y1='6' x2='6' y2='18'></line><line x1='6' y1='6' x2='18' y2='18'></line></svg>\
                 </button>\
@@ -613,6 +652,25 @@ impl JongoController {
         });
         element.add_event_listener_with_callback("click", stop_click.as_ref().unchecked_ref()).unwrap();
         stop_click.forget();
+
+        // Font size A− / A+
+        let font_cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+            let Some(target) = e.target() else { return };
+            let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
+            let Ok(Some(btn)) = el.closest("[data-font-delta]") else { return };
+            let Some(delta_str) = btn.get_attribute("data-font-delta") else { return };
+            let Ok(delta) = delta_str.parse::<i32>() else { return };
+            e.stop_propagation();
+            CONTROLLER.with(|c| {
+                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    ctrl.adjust_font_size(delta);
+                }
+            });
+        });
+        element
+            .add_event_listener_with_callback("click", font_cb.as_ref().unchecked_ref())
+            .unwrap();
+        font_cb.forget();
 
         // delegated click: chunk row -> detail panel (with toggle deselect)
         let detail_cb = {
@@ -663,7 +721,8 @@ impl JongoController {
                     *sel = None;
                     // Restore all details
                     let cd = chunk_data_for_click.borrow();
-                    let all_html = render_all_details(&cd);
+                    let ctx = render_context_from_controller();
+                    let all_html = render_all_details(&ctx, &cd);
                     detail_panel.set_inner_html(&all_html);
                     return;
                 }
@@ -756,81 +815,6 @@ impl JongoController {
                 }
             })
         };
-
-        // Settings button
-        if let Ok(Some(settings_btn)) = element.query_selector(".jong-settings") {
-            let element_settings = element.clone();
-            let wire_back = wire_back_button.clone();
-            let settings_cb = Closure::<dyn FnMut()>::new(move || {
-                let (dark, furi, fsize) = CONTROLLER.with(|c| {
-                    if let Ok(b) = c.try_borrow() {
-                        (b.dark_mode, b.furigana, b.font_size)
-                    } else {
-                        (false, true, 16)
-                    }
-                });
-                if let Ok(Some(body)) = element_settings.query_selector(".jong-body") {
-                    body.set_inner_html(&render_settings_panel(dark, furi, fsize));
-                    if let Ok(html_body) = body.clone().dyn_into::<web_sys::HtmlElement>() {
-                        let _ = html_body.style().set_property("display", "flex");
-                        let _ = html_body.style().set_property("flex-direction", "column");
-                        let _ = html_body.style().set_property("overflow", "hidden");
-                    }
-                    wire_back(body.clone());
-
-                    if let Ok(Some(toggle)) = body.query_selector("#jong-dark-toggle") {
-                        let toggle_cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |e: web_sys::Event| {
-                            let Some(target) = e.target() else { return };
-                            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
-                            let on = input.checked();
-                            CONTROLLER.with(|c| {
-                                if let Ok(mut ctrl) = c.try_borrow_mut() {
-                                    ctrl.set_dark_mode(on);
-                                }
-                            });
-                            persist_dark_mode(on);
-                        });
-                        toggle.add_event_listener_with_callback("change", toggle_cb.as_ref().unchecked_ref()).unwrap();
-                        toggle_cb.forget();
-                    }
-
-                    if let Ok(Some(toggle)) = body.query_selector("#jong-furigana-toggle") {
-                        let toggle_cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |e: web_sys::Event| {
-                            let Some(target) = e.target() else { return };
-                            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
-                            let on = input.checked();
-                            CONTROLLER.with(|c| {
-                                if let Ok(mut ctrl) = c.try_borrow_mut() {
-                                    ctrl.furigana = on;
-                                }
-                            });
-                            persist_setting("furigana", &JsValue::from_bool(on));
-                        });
-                        toggle.add_event_listener_with_callback("change", toggle_cb.as_ref().unchecked_ref()).unwrap();
-                        toggle_cb.forget();
-                    }
-
-                    if let Ok(Some(input_el)) = body.query_selector("#jong-font-size-input") {
-                        let input_cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |e: web_sys::Event| {
-                            let Some(target) = e.target() else { return };
-                            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
-                            if let Ok(val) = input.value().parse::<u32>() {
-                                CONTROLLER.with(|c| {
-                                    if let Ok(mut ctrl) = c.try_borrow_mut() {
-                                        ctrl.font_size = val;
-                                    }
-                                });
-                                persist_setting("fontSize", &JsValue::from_f64(val as f64));
-                            }
-                        });
-                        input_el.add_event_listener_with_callback("change", input_cb.as_ref().unchecked_ref()).unwrap();
-                        input_cb.forget();
-                    }
-                }
-            });
-            settings_btn.add_event_listener_with_callback("click", settings_cb.as_ref().unchecked_ref()).unwrap();
-            settings_cb.forget();
-        }
 
         // Legend button
         if let Ok(Some(legend_btn)) = element.query_selector(".jong-legend") {
@@ -1148,7 +1132,8 @@ pub fn set_furigana(on: bool) {
 pub fn set_font_size(size: u32) {
     CONTROLLER.with(|c| {
         if let Ok(mut ctrl) = c.try_borrow_mut() {
-            ctrl.font_size = size;
+            ctrl.font_size = size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+            ctrl.apply_font_size_all();
         }
     });
 }
@@ -1217,7 +1202,8 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
     // Re-render the right sidebar to reflect the new disambiguated data
     if let Ok(Some(detail_panel)) = container.query_selector(".jong-detail") {
         let cd = chunk_data.borrow();
-        let all_html = render_all_details(&cd);
+        let ctx = render_context_from_controller();
+        let all_html = render_all_details(&ctx, &cd);
         detail_panel.set_inner_html(&all_html);
         
         // Re-apply highlight and scroll if a row is currently selected
@@ -1240,62 +1226,25 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
 
 type ChunkData = (ProcToken, Option<ProcToken>, Option<ProcToken>, Option<ParticleRole>, Option<usize>);
 
-fn render_structure(sentence: &Sentence, sentence_str: &str, chunk_data: &mut Vec<ChunkData>) -> String {
+fn render_structure(ctx: &RenderContext, sentence: &Sentence, sentence_str: &str, chunk_data: &mut Vec<ChunkData>) -> String {
     let mut html = String::from("<div class='jong-structure' style='position:relative'>");
-    
+    let title_px = scaled_font_px(ctx.font_size, "title");
+
     let escaped = html_escape(sentence_str);
     html.push_str(&format!(
         "<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px'>\
-         <div style='font-size:13px;font-weight:600;line-height:1.4;flex:1;min-width:0;word-break:break-word'>{escaped}</div>\
+         <div class='jong-sentence-text' data-font-tier='title' style='font-size:{title_px}px;font-weight:600;line-height:1.4;flex:1;min-width:0;word-break:break-word'>{escaped}</div>\
          <button class='refine-ai-btn'>Disambiguate</button></div>"
     ));
 
     html.push_str("<div class='jong-tree-scroll-wrapper' style='overflow-x:auto; padding-bottom: 8px;'>");
     html.push_str("<div class='jong-tree-container' style='display:flex;flex-direction:column;width:max-content;min-width:100%'>");
     for clause in &sentence.clauses {
-        html.push_str(&render_clause(clause, chunk_data));
+        html.push_str(&render_clause(ctx, clause, chunk_data));
     }
     html.push_str("</div></div>");
     html.push_str("</div>");
     html
-}
-
-fn render_settings_panel(dark_mode: bool, furigana: bool, font_size: u32) -> String {
-    let checked_dark = if dark_mode { " checked" } else { "" };
-    let checked_furi = if furigana { " checked" } else { "" };
-    format!(
-        "<div class='jong-panel'>\
-           <button class='jong-back'>← Back</button>\
-           <div style='font-size:14px;font-weight:600;margin-bottom:12px'>Settings</div>\
-           <div class='jong-settings-row' style='margin-bottom:8px'>\
-             <div>\
-               <div style='font-weight:500'>Dark mode</div>\
-               <div class='jong-hint' style='margin-top:2px'>Applies to Jongo windows only</div>\
-             </div>\
-             <label class='jong-switch' title='Toggle dark mode'>\
-               <input type='checkbox' id='jong-dark-toggle'{checked_dark} />\
-               <span class='jong-slider'></span>\
-             </label>\
-           </div>\
-           <div class='jong-settings-row' style='margin-bottom:8px'>\
-             <div>\
-               <div style='font-weight:500'>Furigana</div>\
-               <div class='jong-hint' style='margin-top:2px'>Show readings above kanji</div>\
-             </div>\
-             <label class='jong-switch' title='Toggle furigana'>\
-               <input type='checkbox' id='jong-furigana-toggle'{checked_furi} />\
-               <span class='jong-slider'></span>\
-             </label>\
-           </div>\
-           <div class='jong-settings-row'>\
-             <div>\
-               <div style='font-weight:500'>Font Size</div>\
-               <div class='jong-hint' style='margin-top:2px'>Base font size for structure view (px)</div>\
-             </div>\
-             <input type='number' id='jong-font-size-input' value='{font_size}' min='10' max='32' style='width:50px;padding:4px;border:1px solid #ccc;border-radius:4px' />\
-           </div>\
-         </div>"
-    )
 }
 
 fn render_legend_panel() -> String {
@@ -1358,19 +1307,19 @@ fn render_legend_panel() -> String {
     html
 }
 
-fn render_clause(clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
+fn render_clause(ctx: &RenderContext, clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
     let color = clause.relation.color();
     let label = clause.relation.label();
     let mut html = format!(
         "<div style='border:1px solid {color};border-radius:4px;margin-bottom:10px;padding:6px 8px'>\
-         <div style='font-size:10px;color:{color};margin-bottom:6px'>{label}</div>"
+         <div style='font-size:11px;color:{color};margin-bottom:6px'>{label}</div>"
     );
-    html.push_str(&render_chunk_group(&clause.predicate, "", "", chunk_data));
+    html.push_str(&render_chunk_group(ctx, &clause.predicate, "", "", chunk_data));
     if let Some(conn) = &clause.connective {
         let id = chunk_data.len();
         chunk_data.push((conn.clone(), None, None, None, None));
         html.push_str(&format!(
-            "<div class='jong-row' data-chunk-id='{id}' style='margin-top:6px;font-size:14px;font-weight:600;color:{color};padding:6px 4px'>{}</div>",
+            "<div class='jong-row' data-chunk-id='{id}' style='margin-top:6px;font-size:11px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
             conn.full
         ));
     }
@@ -1378,7 +1327,7 @@ fn render_clause(clause: &Clause, chunk_data: &mut Vec<ChunkData>) -> String {
     html
 }
 
-fn render_chunk_group(chunk: &Chunk, prefix: &str, branch: &str, chunk_data: &mut Vec<ChunkData>) -> String {
+fn render_chunk_group(ctx: &RenderContext, chunk: &Chunk, prefix: &str, branch: &str, chunk_data: &mut Vec<ChunkData>) -> String {
     let mut html = String::from("<div>");
     
     let mod_child_prefix = if prefix.is_empty() && branch.is_empty() {
@@ -1392,9 +1341,10 @@ fn render_chunk_group(chunk: &Chunk, prefix: &str, branch: &str, chunk_data: &mu
     for (i, modifier) in chunk.modifiers.iter().enumerate() {
         let mod_is_first = i == 0;
         let mod_branch = if mod_is_first { "┌── " } else { "├── " };
-        html.push_str(&render_modifier(modifier, &mod_child_prefix, mod_branch, chunk_data));
+        html.push_str(&render_modifier(ctx, modifier, &mod_child_prefix, mod_branch, chunk_data));
     }
     html.push_str(&render_row(
+        ctx,
         &chunk.word,
         chunk.particle.as_ref(),
         chunk.secondary_particle.as_ref(),
@@ -1407,21 +1357,21 @@ fn render_chunk_group(chunk: &Chunk, prefix: &str, branch: &str, chunk_data: &mu
     html
 }
 
-fn render_modifier(modifier: &Modifier, prefix: &str, branch: &str, chunk_data: &mut Vec<ChunkData>) -> String {
+fn render_modifier(ctx: &RenderContext, modifier: &Modifier, prefix: &str, branch: &str, chunk_data: &mut Vec<ChunkData>) -> String {
     match modifier {
-        Modifier::AdjectiveChunk(chunk) => render_chunk_group(chunk, prefix, branch, chunk_data),
-        Modifier::AdverbChunk(chunk) => render_chunk_group(chunk, prefix, branch, chunk_data),
-        Modifier::NounChunk(chunk) => render_chunk_group(chunk, prefix, branch, chunk_data),
-        Modifier::Limitation(chunk) => render_chunk_group(chunk, prefix, branch, chunk_data),
+        Modifier::AdjectiveChunk(chunk) => render_chunk_group(ctx, chunk, prefix, branch, chunk_data),
+        Modifier::AdverbChunk(chunk) => render_chunk_group(ctx, chunk, prefix, branch, chunk_data),
+        Modifier::NounChunk(chunk) => render_chunk_group(ctx, chunk, prefix, branch, chunk_data),
+        Modifier::Limitation(chunk) => render_chunk_group(ctx, chunk, prefix, branch, chunk_data),
         Modifier::Quotation(sentence) => {
             let mut html = String::new();
             for c in &sentence.clauses {
-                html.push_str(&render_clause(c, chunk_data));
+                html.push_str(&render_clause(ctx, c, chunk_data));
             }
             html
         },
         Modifier::Clause(clause) => {
-            render_chunk_group(&clause.predicate, prefix, branch, chunk_data)
+            render_chunk_group(ctx, &clause.predicate, prefix, branch, chunk_data)
         }
     }
 }
@@ -1583,6 +1533,7 @@ fn format_word_html(word: &ProcToken, enable_furigana: bool) -> String {
 }
 
 fn render_row(
+    ctx: &RenderContext,
     word: &ProcToken,
     particle: Option<&ProcToken>,
     secondary_particle: Option<&ProcToken>,
@@ -1594,34 +1545,30 @@ fn render_row(
     let id = chunk_data.len();
     chunk_data.push((word.clone(), particle.cloned(), secondary_particle.cloned(), role.cloned(), None));
 
-    let (enable_furi, base_font_size) = CONTROLLER.with(|c| {
-        if let Ok(b) = c.try_borrow() {
-            (b.furigana, b.font_size)
-        } else {
-            (true, 16)
-        }
-    });
-
-    let (size, word_class) = if prefix.is_empty() && branch.is_empty() {
-        (format!("{}px", base_font_size), "jong-word-head")
+    let (tier, size, word_class) = if prefix.is_empty() && branch.is_empty() {
+        ("head", format!("{}px", scaled_font_px(ctx.font_size, "head")), "jong-word-head")
     } else {
-        (format!("{}px", (base_font_size as f32 * 0.9) as u32), "jong-word-mod")
+        (
+            "mod",
+            format!("{}px", scaled_font_px(ctx.font_size, "mod")),
+            "jong-word-mod",
+        )
     };
-    
-    let word_html = format_word_html(word, enable_furi);
+
+    let word_html = format_word_html(word, ctx.furigana);
 
     let mut html = format!(
-        "<div class='jong-row' data-chunk-id='{id}' style='font-size:{size};line-height:1.2;padding:0 4px'>\
+        "<div class='jong-row' data-chunk-id='{id}' data-font-tier='{tier}' style='font-size:{size};line-height:1.2;padding:0 4px'>\
          <span class='jong-tree-arm'>{}{}</span>\
          <span class='{word_class}'>{}</span>",
         prefix, branch, word_html
     );
     if let Some(p) = particle {
-        let p_html = format_word_html(p, enable_furi);
+        let p_html = format_word_html(p, ctx.furigana);
         html.push_str(&format!(" <span class='{word_class}'>{}</span>", p_html));
     }
     if let Some(sp) = secondary_particle {
-        let sp_html = format_word_html(sp, enable_furi);
+        let sp_html = format_word_html(sp, ctx.furigana);
         html.push_str(&format!(" <span class='{word_class}'>{}</span>", sp_html));
     }
     if let Some(r) = role {
@@ -1635,7 +1582,7 @@ fn render_row(
     }
     if let Some(conj_tag) = word.verb_print() {
         html.push_str(&format!(
-            " <span class='jong-verb-badge' style='font-size:10px;color:#05a;border:1px solid #05a;border-radius:3px;padding:0 4px'>{}</span>",
+            " <span class='jong-verb-badge'>{}</span>",
             conj_tag
         ));
     }
@@ -1643,10 +1590,10 @@ fn render_row(
     html
 }
 
-fn render_all_details(chunk_data: &[ChunkData]) -> String {
+fn render_all_details(ctx: &RenderContext, chunk_data: &[ChunkData]) -> String {
     let mut html = String::new();
     for (i, (word, particle, secondary_particle, role, selected_def)) in chunk_data.iter().enumerate() {
-        let detail_body = render_detail(word, particle.as_ref(), secondary_particle.as_ref(), role.as_ref(), *selected_def);
+        let detail_body = render_detail(ctx, word, particle.as_ref(), secondary_particle.as_ref(), role.as_ref(), *selected_def);
         html.push_str(&format!(
             "<div class='jong-accordion' data-detail-id='{}'>\
              <div class='jong-accordion-body'>{}</div>\
@@ -1657,11 +1604,16 @@ fn render_all_details(chunk_data: &[ChunkData]) -> String {
     html
 }
 
-fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, secondary_particle: Option<&ProcToken>, role: Option<&ParticleRole>, selected_def: Option<usize>) -> String {
-    let mut html = String::from("<div style='font-size:12px;line-height:1.6'>");
+fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcToken>, secondary_particle: Option<&ProcToken>, role: Option<&ParticleRole>, selected_def: Option<usize>) -> String {
+    let body_px = scaled_font_px(ctx.font_size, "detail");
+    let head_px = scaled_font_px(ctx.font_size, "detail-head");
+    let sub_px = scaled_font_px(ctx.font_size, "detail-sub");
+    let xs_px = scaled_font_px(ctx.font_size, "detail-xs");
+
+    let mut html = format!("<div data-font-tier='detail' style='font-size:{body_px}px;line-height:1.6'>");
 
     html.push_str(&format!(
-        "<div style='font-size:16px;font-weight:600;margin-bottom:4px'>{}</div>",
+        "<div data-font-tier='detail-head' style='font-size:{head_px}px;font-weight:600;margin-bottom:4px'>{}</div>",
         word.full
     ));
 
@@ -1710,7 +1662,7 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, secondary_parti
             html.push_str("</ol>");
             
             if is_resolved {
-                html.push_str("<div style='margin-top:8px;font-size:11px;text-align:center'>");
+                html.push_str(&format!("<div data-font-tier='detail-xs' style='margin-top:8px;font-size:{xs_px}px;text-align:center'>"));
                 html.push_str("<button onclick='\
                     let items = this.parentElement.parentElement.querySelectorAll(\".def-item\");\
                     let isHidden = items[0].style.display === \"none\" || items[1]?.style.display === \"none\";\
@@ -1742,7 +1694,7 @@ fn render_detail(word: &ProcToken, particle: Option<&ProcToken>, secondary_parti
     if let Some(p) = particle {
         html.push_str("<div class='jong-detail-section' style='margin-top:10px;padding-top:6px'>");
         html.push_str(&format!(
-            "<div style='font-weight:600;font-size:13px;margin-bottom:4px'>Particle: {}</div>",
+            "<div data-font-tier='detail-sub' style='font-weight:600;font-size:{sub_px}px;margin-bottom:4px'>Particle: {}</div>",
             p.full
         ));
         match role {
