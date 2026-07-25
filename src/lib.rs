@@ -722,6 +722,13 @@ impl JongoController {
 .jong-tree-arm{{font-family:monospace;white-space:pre;color:#666;flex-shrink:0;align-self:center}}\
 .jong-particle-inline{{color:#6b7280;font-weight:500;margin-left:2px}}\
 [data-jong-dark=\"1\"] .jong-particle-inline{{color:{DARK_TEXT_MUTED}}}\
+[data-jong-dark=\"1\"] .jong-candidate-label{{color:#fbbf24}}\
+[data-jong-dark=\"1\"] .jong-candidate-or{{color:#6b7280}}\
+[data-jong-dark=\"1\"] .jong-candidate-badge{{color:#fbbf24;border-color:#d97706;background:transparent}}\
+.jong-candidate-group{{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}}\
+.jong-candidate-label{{color:#b45309;font-weight:600;text-transform:uppercase;letter-spacing:.04em}}\
+.jong-candidate-or{{color:#9ca3af;font-style:italic}}\
+.jong-candidate-badge{{color:#b45309;border:1px dashed #f59e0b;background:transparent;border-radius:999px;padding:2px 8px;font-weight:600}}\
              .jong-row:hover{{background:#eef2f7}}\
              .jong-row-selected{{background:#dbeafe}}\
 .jong-nat-seg{{cursor:pointer;border-radius:3px;padding:0 2px;transition:background 0.1s}}\
@@ -2327,14 +2334,24 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
         ));
         match role {
             Some(ParticleRole::Ambiguous(candidates)) => {
-                for c in candidates {
+                html.push_str("<span class='jong-candidate-group'>");
+                html.push_str(&format!(
+                    "<span class='jong-candidate-label' data-font-tier='detail-xs' style='font-size:{xs_px}px'>Unresolved</span>"
+                ));
+                for (i, c) in candidates.iter().enumerate() {
+                    if i > 0 {
+                        html.push_str(&format!(
+                            "<span class='jong-candidate-or' data-font-tier='detail-xs' style='font-size:{xs_px}px'>or</span>"
+                        ));
+                    }
                     let tip = format!("{}: {}", c.badge(), c.explanation());
                     html.push_str(&format!(
-                        "<span class='ambiguous-badge jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                        "<span class='jong-candidate-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
                         tip_attrs(ctx, &tip),
                         c.badge()
                     ));
                 }
+                html.push_str("</span>");
             }
             Some(r) => {
                 let tip = role_tip(r);
