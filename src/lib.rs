@@ -718,7 +718,8 @@ impl JongoController {
 
         let html = format!(
             "<style>\
-             .jong-row{{cursor:pointer;border-radius:3px;white-space:nowrap}}\
+             .jong-row{{cursor:pointer;border-radius:3px;white-space:nowrap;display:flex;align-items:center;gap:6px}}\
+.jong-tree-arm{{font-family:monospace;white-space:pre;color:#666;flex-shrink:0;align-self:center}}\
              .jong-row:hover{{background:#eef2f7}}\
              .jong-row-selected{{background:#dbeafe}}\
 .jong-nat-seg{{cursor:pointer;border-radius:3px;padding:0 2px;transition:background 0.1s}}\
@@ -1917,7 +1918,95 @@ fn strip_common_ending(mut s: String) -> String {
     s
 }
 
+fn try_render_multi_run(full_chars: &[char], h_reading: &str) -> Option<String> {
+    // Split surface into alternating kanji / kana runs.
+    let mut runs: Vec<(bool, String)> = Vec::new(); // (is_kanji, text)
+    let mut i = 0;
+    while i < full_chars.len() {
+        let start = i;
+        let is_k = is_kanji(full_chars[i]);
+        while i < full_chars.len() && is_kanji(full_chars[i]) == is_k {
+            i += 1;
+        }
+        let text: String = full_chars[start..i].iter().collect();
+        runs.push((is_k, text));
+    }
+
+    let reading_chars: Vec<char> = h_reading.chars().collect();
+    let mut r_cursor = 0usize;
+    let mut out = String::new();
+
+    for (idx, (is_k, text)) in runs.iter().enumerate() {
+        if !is_k {
+            // Kana run: must appear at reading cursor
+            let kana_hira = katakana_to_hiragana(text);
+            let kana_chars: Vec<char> = kana_hira.chars().collect();
+            if r_cursor + kana_chars.len() > reading_chars.len() {
+                return None;
+            }
+            if reading_chars[r_cursor..r_cursor + kana_chars.len()] != kana_chars[..] {
+                return None;
+            }
+            out.push_str(&html_escape(text));
+            r_cursor += kana_chars.len();
+        } else {
+            // Kanji run: reading extends until next kana landmark (or end of reading if last)
+            let is_last = idx == runs.len() - 1;
+            let kanji_reading: String = if is_last {
+                reading_chars[r_cursor..].iter().collect()
+            } else {
+                // Peek at next run — must be kana — find where it starts in reading
+                let (_, next_kana) = &runs[idx + 1];
+                let next_hira = katakana_to_hiragana(next_kana);
+                let next_chars: Vec<char> = next_hira.chars().collect();
+                if next_chars.is_empty() {
+                    return None;
+                }
+                // Find next_chars starting somewhere at or after r_cursor
+                let mut found = None;
+                if reading_chars.len() >= next_chars.len() {
+                    for start in r_cursor..=reading_chars.len().saturating_sub(next_chars.len()) {
+                        if reading_chars[start..start + next_chars.len()] == next_chars[..] {
+                            found = Some(start);
+                            break;
+                        }
+                    }
+                }
+                let end = found?;
+                if end <= r_cursor {
+                    return None; // Kanji run must have at least one char of reading
+                }
+                let slice: String = reading_chars[r_cursor..end].iter().collect();
+                r_cursor = end;
+                slice
+            };
+
+            if kanji_reading.is_empty() {
+                return None;
+            }
+            if is_last {
+                r_cursor = reading_chars.len();
+            }
+            out.push_str(&format!(
+                "<ruby>{}<rt>{}</rt></ruby>",
+                html_escape(text),
+                html_escape(&kanji_reading)
+            ));
+        }
+    }
+
+    if r_cursor != reading_chars.len() {
+        return None; // Reading not fully consumed → misalignment
+    }
+
+    Some(out)
+}
+
 fn format_word_html(word: &ProcToken, enable_furigana: bool) -> String {
+    web_sys::console::log_1(&format!(
+        "furigana input: full={:?} base={:?} reading={:?}",
+        word.full, word.base, word.reading
+    ).into());
     if !enable_furigana || !has_kanji(&word.full) {
         return word.full.clone();
     }
@@ -1944,8 +2033,12 @@ fn format_word_html(word: &ProcToken, enable_furigana: bool) -> String {
     }
     let kanji_end = prefix_kana_len + kanji_run_len;
 
-    // Bail on complex cases (multiple kanji runs).
+// Multi-run case: use kana landmarks to slice the reading.
     if full_chars[kanji_end..].iter().any(|&c| is_kanji(c)) {
+        if let Some(rendered) = try_render_multi_run(&full_chars, &h_reading) {
+            return rendered;
+        }
+        // Fallback: whole-surface ruby if landmarks don't align
         return format!(
             "<ruby>{}<rt>{}</rt></ruby>",
             html_escape(&word.full),
