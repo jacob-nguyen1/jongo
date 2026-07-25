@@ -17,7 +17,13 @@ use crate::sentence::{Chunk, Clause, Modifier, Sentence};
 
 const SENTENCE_DELIMITERS: [u16; 4] = ['.' as u16, '。' as u16, '\n' as u16, '…' as u16];
 const MIN_WINDOW_WIDTH: f64 = 360.0;
-const MIN_WINDOW_HEIGHT: f64 = 200.0;
+// Raise the minimum default height so short popups are a bit taller by default
+const MIN_WINDOW_HEIGHT: f64 = 280.0;
+// Default and max sizes for the initial popup
+const DEFAULT_WINDOW_WIDTH: f64 = 760.0;
+const DEFAULT_WINDOW_HEIGHT: f64 = 420.0;
+const MAX_DEFAULT_WINDOW_WIDTH: f64 = 1000.0;
+const MAX_DEFAULT_WINDOW_HEIGHT: f64 = 820.0;
 const RESIZE_EDGE: f64 = 10.0;
 const BASE_Z_INDEX: u32 = 10_000;
 const DEFAULT_FONT_SIZE: u32 = 20;
@@ -56,6 +62,35 @@ fn corner_cursor(corner: ResizeCorner) -> &'static str {
         ResizeCorner::Nw | ResizeCorner::Se => "nwse-resize",
         ResizeCorner::Ne | ResizeCorner::Sw => "nesw-resize",
     }
+}
+
+fn estimate_initial_window_size(sentence: &str, viewport_width: f64, viewport_height: f64) -> (f64, f64) {
+    let length = sentence.chars().count().max(1) as f64;
+    // Increase width sensitivity to account for nested clauses and tag pills
+    let mut width = DEFAULT_WINDOW_WIDTH + (length / 60.0).floor() * 60.0;
+    let mut height = DEFAULT_WINDOW_HEIGHT + (length / 20.0).floor() * 28.0;
+
+    width = width.min(MAX_DEFAULT_WINDOW_WIDTH);
+    height = height.min(MAX_DEFAULT_WINDOW_HEIGHT);
+
+    // Allowed by viewport (leave a small margin)
+    let max_width_allowed = (viewport_width - 40.0).max(120.0);
+    let max_height_allowed = (viewport_height - 40.0).max(120.0);
+
+    // Prefer the computed size, but do not exceed viewport; also prefer MIN_WINDOW_* when possible
+    width = width.min(max_width_allowed);
+    let lower_w = MIN_WINDOW_WIDTH.min(max_width_allowed);
+    if width < lower_w {
+        width = lower_w;
+    }
+
+    height = height.min(max_height_allowed);
+    let lower_h = MIN_WINDOW_HEIGHT.min(max_height_allowed);
+    if height < lower_h {
+        height = lower_h;
+    }
+
+    (width, height)
 }
 
 async fn fetch_llm(prompt: &str) -> JsValue {
@@ -619,6 +654,9 @@ impl JongoController {
         let document = window.document().unwrap();
 
         let prompt_rect = self.prompt.as_ref().unwrap().get_bounding_client_rect();
+        let viewport_width = window.inner_width().unwrap_or(JsValue::from_f64(DEFAULT_WINDOW_WIDTH)).as_f64().unwrap_or(DEFAULT_WINDOW_WIDTH);
+        let viewport_height = window.inner_height().unwrap_or(JsValue::from_f64(DEFAULT_WINDOW_HEIGHT)).as_f64().unwrap_or(DEFAULT_WINDOW_HEIGHT);
+        let (default_width, default_height) = estimate_initial_window_size(sentence, viewport_width, viewport_height);
 
         let element = document.create_element("div").unwrap().dyn_into::<web_sys::HtmlElement>().unwrap();
         element.style().set_property("position", "absolute").unwrap();
@@ -630,8 +668,8 @@ impl JongoController {
         element.style().set_property("border", "1px solid black").unwrap();
         element.style().set_property("z-index", "9999").unwrap();
         element.style().set_property("color", "black").unwrap();
-        element.style().set_property("width", "680px").unwrap();
-        element.style().set_property("height", "400px").unwrap();
+        element.style().set_property("width", &format!("{default_width}px")).unwrap();
+        element.style().set_property("height", &format!("{default_height}px")).unwrap();
         element.style().set_property("box-sizing", "border-box").unwrap();
         element.style().set_property("overflow", "hidden").unwrap();
         let tokens = grammar::analyze_sentence(sentence);
@@ -2142,6 +2180,27 @@ mod tests {
     fn furigana_onaka() {
         let tok = make_token("お腹", "お腹", Some("オナカ"), PartOfSpeech::Noun, PartOfSpeechSubcategory1::Unbound);
         assert_eq!(format_word_html(&tok, true), "お<ruby>腹<rt>なか</rt></ruby>");
+    }
+
+    #[test]
+    fn estimate_initial_window_size_caps_and_grows() {
+        let (width, height) = estimate_initial_window_size(&"あ".repeat(400), 2000.0, 1400.0);
+        assert!(width <= MAX_DEFAULT_WINDOW_WIDTH);
+        assert!(height <= MAX_DEFAULT_WINDOW_HEIGHT);
+        assert!(height > DEFAULT_WINDOW_HEIGHT);
+    }
+
+    #[test]
+    fn estimate_initial_window_size_respects_viewport() {
+        let vw = 480.0;
+        let vh = 260.0;
+        let max_w = vw - 40.0;
+        let max_h = vh - 40.0;
+        let (width, height) = estimate_initial_window_size("短い文", vw, vh);
+        assert!(width <= max_w);
+        assert!(height <= max_h);
+        assert!(width >= MIN_WINDOW_WIDTH.min(max_w));
+        assert!(height >= MIN_WINDOW_HEIGHT.min(max_h));
     }
 
     #[test]
