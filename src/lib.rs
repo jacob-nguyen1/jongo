@@ -215,6 +215,11 @@ box-shadow:0 8px 22px rgba(0,0,0,.24),0 1px 2px rgba(0,0,0,.14)}\
 box-shadow:0 4px 16px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.2)}\
 [data-jong-dark=\"1\"] .jong-prompt-btn:hover{background:#fff;transform:translateY(-1px)}\
 [data-jong-dark=\"1\"] .jong-prompt-btn:active{transform:translateY(0)}\
+.jong-nat-seg{cursor:pointer;border-radius:3px;padding:0 2px;transition:background 0.1s}\
+.jong-nat-seg:hover{background:#eef2f7}\
+.jong-nat-seg-selected{background:#dbeafe}\
+[data-jong-dark=\"1\"] .jong-nat-seg:hover{background:#2d333b}\
+[data-jong-dark=\"1\"] .jong-nat-seg-selected{background:#3b4b61}\
 </style>\
 <button type='button' class='jong-prompt-btn' title='Analyze with Jongo'>jong</button>"
 }
@@ -692,9 +697,15 @@ impl JongoController {
             furigana: self.furigana,
             tooltips: self.tooltips,
         };
-        let left = crate::sentence::build_sentence(tokens)
-            .map(|s| render_structure(&ctx, &s, sentence, &mut chunk_data))
-            .unwrap_or_else(|| "<div>could not parse</div>".to_string());
+        let left = match crate::sentence::build_sentence(tokens) {
+            Some(s) => {
+                let tree_html = render_structure_tree(&ctx, &s, &mut chunk_data);
+                compute_surface_ranges(sentence, &mut chunk_data);
+                let sentence_html = render_natural_sentence(&ctx, sentence, &chunk_data);
+                format!("{sentence_html}{tree_html}")
+            }
+            None => "<div>could not parse</div>".to_string(),
+        };
 
         let chunk_data_rc = Rc::new(RefCell::new(chunk_data));
 
@@ -710,6 +721,9 @@ impl JongoController {
              .jong-row{{cursor:pointer;border-radius:3px;white-space:nowrap}}\
              .jong-row:hover{{background:#eef2f7}}\
              .jong-row-selected{{background:#dbeafe}}\
+.jong-nat-seg{{cursor:pointer;border-radius:3px;padding:0 2px;transition:background 0.1s}}\
+.jong-nat-seg:hover{{background:#eef2f7}}\
+.jong-nat-seg-selected{{background:#dbeafe}}\
              .jong-top-bar{{display:flex;align-items:stretch;background:#f5f5f5;border-bottom:1px solid #e0e0e0;flex-shrink:0;height:32px}}\
              .jong-drag-handle{{flex:1;cursor:move;display:flex;align-items:center;padding:0 12px;user-select:none}}\
              .jong-legend{{background:#fffef5;color:#ca8a04;border:none;border-left:1px solid #e0e0e0;cursor:pointer;padding:0 14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s}}\
@@ -764,9 +778,8 @@ impl JongoController {
              .jong-def-list{{list-style:none;margin:0;padding:0}}\
              .jong-def-item{{padding:4px 0 4px 10px;margin-bottom:2px;color:#555;border-left:2px solid transparent;line-height:1.4}}\
              .jong-def-item.selected{{font-weight:700;color:#111;border-left-color:#22c55e}}\
-             .jong-def-toggle{{margin-top:4px;padding-left:10px}}\
-             .jong-def-toggle button{{background:none;border:none;color:#888;cursor:pointer;padding:0;font:inherit;font-size:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px;letter-spacing:.02em}}\
-             .jong-def-toggle button:hover{{color:#111}}\
+             .jong-def-toggle-btn{{background:none;border:none;color:#888;cursor:pointer;padding:0;font-family:inherit;font-weight:400;text-transform:none;letter-spacing:.02em;text-decoration:none;display:inline-flex;align-items:center;gap:4px;line-height:1}}\
+             .jong-def-toggle-btn:hover{{color:#111}}\
              .jong-particle-row{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}\
              .jong-particle-chip{{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:2px 8px;border:1px solid #ddd;border-radius:6px;font-weight:600;background:#fafafa}}\
              .jong-tag-row{{display:flex;flex-wrap:wrap;gap:6px}}\
@@ -791,6 +804,8 @@ impl JongoController {
              .jong-legend-clause-badge{{display:inline-flex;align-items:center;flex-shrink:0;min-width:96px;font-weight:600;padding:2px 8px;border-radius:4px;box-sizing:border-box}}\
              [data-jong-dark=\"1\"] .jong-row:hover{{background:{DARK_SURFACE_HIGH}}}\
              [data-jong-dark=\"1\"] .jong-row-selected{{background:{DARK_SELECTED}}}\
+[data-jong-dark=\"1\"] .jong-nat-seg:hover{{background:{DARK_SURFACE_HIGH}}}\
+[data-jong-dark=\"1\"] .jong-nat-seg-selected{{background:{DARK_SELECTED}}}\
              [data-jong-dark=\"1\"] .jong-top-bar{{background:{DARK_SURFACE};border-bottom-color:{DARK_BORDER}}}\
              [data-jong-dark=\"1\"] .jong-drag-handle{{color:{DARK_TEXT_MUTED}}}\
              [data-jong-dark=\"1\"] .jong-legend{{background:#352c14;color:#facc15;border-left-color:{DARK_BORDER}}}\
@@ -827,7 +842,8 @@ impl JongoController {
              [data-jong-dark=\"1\"] .jong-card-divider{{border-top-color:{DARK_BORDER}}}\
              [data-jong-dark=\"1\"] .jong-def-item{{color:{DARK_TEXT_MUTED};border-left-color:transparent}}\
              [data-jong-dark=\"1\"] .jong-def-item.selected{{color:{DARK_TEXT};border-left-color:#4ade80}}\
-             [data-jong-dark=\"1\"] .jong-def-toggle button{{color:#6ee7b7}}\
+             [data-jong-dark=\"1\"] .jong-def-toggle-btn{{color:#8b8f9a}}\
+             [data-jong-dark=\"1\"] .jong-def-toggle-btn:hover{{color:#e8eaef}}\
              [data-jong-dark=\"1\"] .jong-particle-chip{{background:{DARK_SURFACE_HIGH};border-color:{DARK_BORDER_STRONG};color:{DARK_TEXT_SECONDARY}}}\
              [data-jong-dark=\"1\"] .jong-staircase-box{{background:{DARK_SURFACE};border-color:{DARK_BORDER};color:{DARK_TEXT_SECONDARY}}}\
              [data-jong-dark=\"1\"] .jong-no-entry{{color:{DARK_TEXT_DIM}}}\
@@ -916,12 +932,12 @@ impl JongoController {
                 let Some(target) = e.target() else { return };
                 let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
 
-                let idx = if let Ok(Some(row)) = el.closest("[data-chunk-id]") {
-                    row.get_attribute("data-chunk-id")
-                        .and_then(|s| s.parse::<usize>().ok())
-                } else if let Ok(Some(accordion)) = el.closest(".jong-accordion") {
+                let idx = if let Ok(Some(accordion)) = el.closest(".jong-accordion") {
                     accordion
                         .get_attribute("data-detail-id")
+                        .and_then(|s| s.parse::<usize>().ok())
+                } else if let Ok(Some(row)) = el.closest("[data-chunk-id]") {
+                    row.get_attribute("data-chunk-id")
                         .and_then(|s| s.parse::<usize>().ok())
                 } else {
                     return;
@@ -938,6 +954,32 @@ impl JongoController {
                             if let Ok(el) = node.dyn_into::<web_sys::Element>() {
                                 let cls = el.get_attribute("class").unwrap_or_default();
                                 let _ = el.set_attribute("class", &cls.replace(" jong-row-selected", ""));
+                            }
+                        }
+                    }
+                }
+
+                // Clear natural sentence segment highlights
+                let segs = container.query_selector_all(".jong-nat-seg-selected");
+                if let Ok(list) = segs {
+                    for i in 0..list.length() {
+                        if let Some(node) = list.item(i) {
+                            if let Ok(el) = node.dyn_into::<web_sys::Element>() {
+                                let cls = el.get_attribute("class").unwrap_or_default();
+                                let _ = el.set_attribute("class", &cls.replace(" jong-nat-seg-selected", ""));
+                            }
+                        }
+                    }
+                }
+
+                // Clear natural sentence highlights
+                let nat_segs = container.query_selector_all(".jong-nat-seg-selected");
+                if let Ok(list) = nat_segs {
+                    for i in 0..list.length() {
+                        if let Some(node) = list.item(i) {
+                            if let Ok(el) = node.dyn_into::<web_sys::Element>() {
+                                let cls = el.get_attribute("class").unwrap_or_default();
+                                let _ = el.set_attribute("class", &cls.replace(" jong-nat-seg-selected", ""));
                             }
                         }
                     }
@@ -968,7 +1010,8 @@ impl JongoController {
                 }
                 *sel = Some(idx);
 
-                let row_selector = format!("[data-chunk-id='{idx}']");
+                // Highlight tree row
+                let row_selector = format!(".jong-row[data-chunk-id='{idx}']");
                 if let Ok(Some(row)) = container.query_selector(&row_selector) {
                     let cls = row.get_attribute("class").unwrap_or_default();
                     let _ = row.set_attribute("class", &format!("{cls} jong-row-selected"));
@@ -989,6 +1032,19 @@ impl JongoController {
                             }
                         }
                     }
+                }
+
+                // Highlight natural sentence segment
+                let seg_selector = format!(".jong-nat-seg[data-chunk-id='{idx}']");
+                if let Ok(Some(seg)) = container.query_selector(&seg_selector) {
+                    let cls = seg.get_attribute("class").unwrap_or_default();
+                    let _ = seg.set_attribute("class", &format!("{cls} jong-nat-seg-selected"));
+                }
+
+                let nat_seg_selector = format!(".jong-nat-seg[data-chunk-id='{idx}']");
+                if let Ok(Some(seg)) = container.query_selector(&nat_seg_selector) {
+                    let cls = seg.get_attribute("class").unwrap_or_default();
+                    let _ = seg.set_attribute("class", &format!("{cls} jong-nat-seg-selected"));
                 }
 
                 let accordion_selector = format!("[data-detail-id='{idx}']");
@@ -1441,7 +1497,7 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                     if let Some(resolved_role) = ParticleRole::from_str(role_str) {
                         // Mutate the ChunkData to store the resolved role
                         if let Some(entry) = cd.get_mut(idx) {
-                            entry.3 = Some(resolved_role.clone());
+                            entry.role = Some(resolved_role.clone());
                         }
                         
                         // Update the badge in the DOM
@@ -1459,7 +1515,7 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                 if let Some(def_idx) = dis.result.as_i64() {
                     // Mutate the ChunkData to store the selected definition
                     if let Some(entry) = cd.get_mut(idx) {
-                        entry.4 = Some(def_idx as usize);
+                        entry.selected_def = Some(def_idx as usize);
                     }
                 }
             }
@@ -1495,19 +1551,102 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
     }
 }
 
-type ChunkData = (ProcToken, Option<ProcToken>, Option<ProcToken>, Option<ParticleRole>, Option<usize>);
+struct ChunkData {
+    word: ProcToken,
+    particle: Option<ProcToken>,
+    secondary_particle: Option<ProcToken>,
+    role: Option<ParticleRole>,
+    selected_def: Option<usize>,
+    surface_range: Option<(usize, usize)>,
+}
 
-fn render_structure(ctx: &RenderContext, sentence: &Sentence, sentence_str: &str, chunk_data: &mut Vec<ChunkData>) -> String {
-    let mut html = String::from("<div class='jong-structure' style='position:relative'>");
+fn compute_surface_ranges(sentence: &str, chunks: &mut [ChunkData]) {
+    let chars: Vec<char> = sentence.chars().collect();
+    let mut cursor = 0;
+
+    for chunk in chunks {
+        let mut surface = chunk.word.full.clone();
+        if let Some(p) = &chunk.particle {
+            surface.push_str(&p.full);
+        }
+        if let Some(sp) = &chunk.secondary_particle {
+            surface.push_str(&sp.full);
+        }
+
+        let surface_chars: Vec<char> = surface.chars().collect();
+        if surface_chars.is_empty() {
+            continue;
+        }
+
+        let mut found_pos = None;
+        for p in cursor..=chars.len().saturating_sub(surface_chars.len()) {
+            if chars[p..p + surface_chars.len()] == surface_chars[..] {
+                found_pos = Some(p);
+                break;
+            }
+        }
+
+        if let Some(p) = found_pos {
+            chunk.surface_range = Some((p, p + surface_chars.len()));
+            cursor = p + surface_chars.len();
+        }
+    }
+}
+
+fn render_natural_sentence(ctx: &RenderContext, sentence: &str, chunks: &[ChunkData]) -> String {
     let title_px = scaled_font_px(ctx.font_size, "title");
+    let mut html = format!(
+        "<div class='jong-sentence-text' data-font-tier='title' style='font-size:{title_px}px;font-weight:600;line-height:1.4;margin-bottom:8px;word-break:break-word'>"
+    );
 
-    let escaped = html_escape(sentence_str);
-    html.push_str(&format!(
-        "<div class='jong-sentence-text' data-font-tier='title' style='font-size:{title_px}px;font-weight:600;line-height:1.4;margin-bottom:8px;word-break:break-word'>{escaped}</div>"
-    ));
+    let chars: Vec<char> = sentence.chars().collect();
+    let mut cursor = 0;
+    let mut sorted_chunks: Vec<(usize, &ChunkData)> = chunks
+        .iter()
+        .enumerate()
+        .filter_map(|(id, c)| c.surface_range.map(|(start, _)| (id, c)))
+        .collect();
+    sorted_chunks.sort_by_key(|(id, c)| c.surface_range.unwrap().0);
 
-    html.push_str("<div class='jong-tree-scroll-wrapper'>");
-    html.push_str("<div class='jong-tree-container' style='display:flex;flex-direction:column;width:max-content;min-width:100%'>");
+    for (id, chunk) in sorted_chunks {
+        let (start, end) = chunk.surface_range.unwrap();
+        
+        // Gap chars
+        if cursor < start {
+            let gap: String = chars[cursor..start].iter().collect();
+            html.push_str(&html_escape(&gap));
+            cursor = start;
+        }
+
+        // Segment
+        let word_html = format_word_html(&chunk.word, ctx.furigana);
+        let mut seg_content = word_html;
+        if let Some(p) = &chunk.particle {
+            seg_content.push_str(&format!(" {}", format_word_html(p, ctx.furigana)));
+        }
+        if let Some(sp) = &chunk.secondary_particle {
+            seg_content.push_str(&format!(" {}", format_word_html(sp, ctx.furigana)));
+        }
+
+        html.push_str(&format!(
+            "<span class='jong-nat-seg' data-chunk-id='{}'>{}</span>",
+            id, seg_content
+        ));
+        cursor = end;
+    }
+
+    if cursor < chars.len() {
+        let trailing: String = chars[cursor..].iter().collect();
+        html.push_str(&html_escape(&trailing));
+    }
+
+    html.push_str("</div>");
+    html
+}
+
+fn render_structure_tree(ctx: &RenderContext, sentence: &Sentence, chunk_data: &mut Vec<ChunkData>) -> String {
+    let mut html = String::from("<div class='jong-structure' style='position:relative'>");
+    html.push_str("<div class='jong-tree-scroll-wrapper'><div class='jong-tree-container' style='display:flex;flex-direction:column;width:max-content;min-width:100%'>");
     for clause in &sentence.clauses {
         html.push_str(&render_clause(ctx, clause, chunk_data));
     }
@@ -1652,7 +1791,14 @@ fn render_clause(ctx: &RenderContext, clause: &Clause, chunk_data: &mut Vec<Chun
     html.push_str(&render_chunk_group(ctx, &clause.predicate, "", "", chunk_data));
     if let Some(conn) = &clause.connective {
         let id = chunk_data.len();
-        chunk_data.push((conn.clone(), None, None, None, None));
+        chunk_data.push(ChunkData {
+            word: conn.clone(),
+            particle: None,
+            secondary_particle: None,
+            role: None,
+            selected_def: None,
+            surface_range: None,
+        });
         html.push_str(&format!(
             "<div class='jong-row jong-clause-connective {rel_class}' data-chunk-id='{id}' data-font-tier='connective' style='margin-top:6px;font-size:{conn_px}px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
             conn.full
@@ -1871,7 +2017,14 @@ fn render_row(
     chunk_data: &mut Vec<ChunkData>,
 ) -> String {
     let id = chunk_data.len();
-    chunk_data.push((word.clone(), particle.cloned(), secondary_particle.cloned(), role.cloned(), None));
+    chunk_data.push(ChunkData {
+        word: word.clone(),
+        particle: particle.cloned(),
+        secondary_particle: secondary_particle.cloned(),
+        role: role.cloned(),
+        selected_def: None,
+        surface_range: None,
+    });
 
     let (tier, size, word_class) = if prefix.is_empty() && branch.is_empty() {
         ("head", format!("{}px", scaled_font_px(ctx.font_size, "head")), "jong-word-head")
@@ -1917,8 +2070,15 @@ fn render_row(
 
 fn render_all_details(ctx: &RenderContext, chunk_data: &[ChunkData]) -> String {
     let mut html = String::new();
-    for (i, (word, particle, secondary_particle, role, selected_def)) in chunk_data.iter().enumerate() {
-        let detail_body = render_detail(ctx, word, particle.as_ref(), secondary_particle.as_ref(), role.as_ref(), *selected_def);
+    for (i, chunk) in chunk_data.iter().enumerate() {
+        let detail_body = render_detail(
+            ctx,
+            &chunk.word,
+            chunk.particle.as_ref(),
+            chunk.secondary_particle.as_ref(),
+            chunk.role.as_ref(),
+            chunk.selected_def,
+        );
         html.push_str(&format!(
             "<div class='jong-accordion' data-detail-id='{}'>\
              <div class='jong-accordion-body'>{}</div>\
@@ -1981,14 +2141,43 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
 
             html.push_str("<div class='jong-card-divider'></div>");
             html.push_str("<div class='jong-def-section'>");
-            html.push_str(&format!(
-                "<div class='jong-section-label' data-font-tier='section-label' style='font-size:{label_px}px'>Definitions{}</div>",
-                type_hint
-            ));
-            html.push_str("<ol class='jong-def-list'>");
 
             let primary = selected_def.unwrap_or(0);
             let is_resolved = selected_def.is_some();
+
+            let toggle_html = if is_resolved && hit.glosses.len() > 1 {
+                let hidden_count = hit.glosses.len() - 1;
+                format!(
+                    "<button type='button' class='jong-def-toggle-btn' data-expanded='0' \
+                     data-font-tier='detail-xs' style='font-size:{xs_px}px' onclick='\
+                        let section = this.closest(\".jong-def-section\");\
+                        let items = section.querySelectorAll(\".def-item\");\
+                        let expanded = this.dataset.expanded === \"1\";\
+                        for (let i = 0; i < items.length; i++) {{\
+                            if (expanded) {{\
+                                if (!items[i].classList.contains(\"selected\")) items[i].style.display = \"none\";\
+                            }} else {{\
+                                items[i].style.display = \"block\";\
+                                items[i].style.opacity = items[i].classList.contains(\"selected\") ? \"1\" : \"0.5\";\
+                            }}\
+                        }}\
+                        this.dataset.expanded = expanded ? \"0\" : \"1\";\
+                        this.innerHTML = expanded ? \"▸ {hidden_count} more\" : \"▾ Hide extras\";\
+                    '>▸ {hidden_count} more</button>"
+                )
+            } else {
+                String::new()
+            };
+
+            html.push_str(&format!(
+                "<div class='jong-section-label' data-font-tier='section-label' \
+                 style='font-size:{label_px}px;display:flex;align-items:baseline;gap:10px'>\
+                 <span>Definitions{type_hint}</span>{toggle_html}</div>",
+                type_hint = type_hint,
+                toggle_html = toggle_html,
+            ));
+
+            html.push_str("<ol class='jong-def-list'>");
 
             for (i, def) in hit.glosses.iter().enumerate() {
                 let is_primary = i == primary;
@@ -2005,27 +2194,6 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
                 ));
             }
             html.push_str("</ol>");
-
-            if is_resolved && hit.glosses.len() > 1 {
-                html.push_str(&format!(
-                    "<div class='jong-def-toggle' data-font-tier='detail-xs' style='font-size:{xs_px}px'>"
-                ));
-                html.push_str("<button type='button' onclick='\
-                    let section = this.closest(\".jong-def-section\");\
-                    let items = section.querySelectorAll(\".def-item\");\
-                    let isHidden = items.length > 1 && items[1].style.display === \"none\";\
-                    for (let i = 0; i < items.length; i++) {\
-                        if (isHidden) {\
-                            items[i].style.display = \"block\";\
-                            items[i].style.opacity = items[i].classList.contains(\"selected\") ? \"1\" : \"0.5\";\
-                        } else if (!items[i].classList.contains(\"selected\")) {\
-                            items[i].style.display = \"none\";\
-                        }\
-                    }\
-                    this.innerText = isHidden ? \"Hide extra definitions\" : \"Show all definitions\";\
-                '>Show all definitions</button>");
-                html.push_str("</div>");
-            }
 
             html.push_str("</div>");
         }
