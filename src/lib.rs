@@ -720,6 +720,8 @@ impl JongoController {
             "<style>\
              .jong-row{{cursor:pointer;border-radius:3px;white-space:nowrap;display:flex;align-items:center;gap:6px}}\
 .jong-tree-arm{{font-family:monospace;white-space:pre;color:#666;flex-shrink:0;align-self:center}}\
+.jong-particle-inline{{color:#6b7280;font-weight:500;margin-left:2px}}\
+[data-jong-dark=\"1\"] .jong-particle-inline{{color:{DARK_TEXT_MUTED}}}\
              .jong-row:hover{{background:#eef2f7}}\
              .jong-row-selected{{background:#dbeafe}}\
 .jong-nat-seg{{cursor:pointer;border-radius:3px;padding:0 2px;transition:background 0.1s}}\
@@ -2139,11 +2141,11 @@ fn render_row(
     );
     if let Some(p) = particle {
         let p_html = format_word_html(p, ctx.furigana);
-        html.push_str(&format!(" <span class='{word_class}'>{}</span>", p_html));
+        html.push_str(&format!("<span class='jong-particle-inline'>{}</span>", p_html));
     }
     if let Some(sp) = secondary_particle {
         let sp_html = format_word_html(sp, ctx.furigana);
-        html.push_str(&format!(" <span class='{word_class}'>{}</span>", sp_html));
+        html.push_str(&format!("<span class='jong-particle-inline'>{}</span>", sp_html));
     }
     if let Some(r) = role {
         let is_ambig = matches!(r, ParticleRole::Ambiguous(_));
