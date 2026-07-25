@@ -1810,7 +1810,7 @@ fn render_clause(ctx: &RenderContext, clause: &Clause, chunk_data: &mut Vec<Chun
             surface_range: None,
         });
         html.push_str(&format!(
-            "<div class='jong-row jong-clause-connective {rel_class}' data-chunk-id='{id}' data-font-tier='connective' style='margin-top:6px;font-size:{conn_px}px;font-weight:600;color:{color};display:inline-block;padding:2px 4px'>{}</div>",
+            "<div class='jong-row jong-clause-connective {rel_class}' data-chunk-id='{id}' data-font-tier='connective' style='margin-top:6px;font-size:{conn_px}px;font-weight:600;color:{color};padding:2px 4px'>{}</div>",
             conn.full
         ));
     }
