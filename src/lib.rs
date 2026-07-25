@@ -481,6 +481,16 @@ impl JongoController {
         }
     }
 
+    fn apply_furigana_all(&self) {
+        for a in &self.analyses {
+            if self.furigana {
+                let _ = a.element.remove_attribute("data-jong-furi");
+            } else {
+                let _ = a.element.set_attribute("data-jong-furi", "0");
+            }
+        }
+    }
+
     fn adjust_font_size(&mut self, delta: i32) {
         let new = (self.font_size as i32 + delta).clamp(MIN_FONT_SIZE as i32, MAX_FONT_SIZE as i32) as u32;
         if new == self.font_size {
@@ -672,6 +682,9 @@ impl JongoController {
         element.style().set_property("height", &format!("{default_height}px")).unwrap();
         element.style().set_property("box-sizing", "border-box").unwrap();
         element.style().set_property("overflow", "hidden").unwrap();
+        if !self.furigana {
+            let _ = element.set_attribute("data-jong-furi", "0");
+        }
         let tokens = grammar::analyze_sentence(sentence);
         let mut chunk_data: Vec<ChunkData> = Vec::new();
         let ctx = RenderContext {
@@ -738,6 +751,7 @@ impl JongoController {
              .jong-pos-badge{{font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-radius:999px;padding:2px 8px;flex-shrink:0;border:1px solid transparent}}\
              .jong-pos-noun{{color:#4338ca;background:#eef2ff;border-color:#c7d2fe}}\
              .jong-pos-verb{{color:#be123c;background:#fff1f2;border-color:#fecdd3}}\
+             [data-jong-furi=\"0\"] rt{{display:none}}\
              .jong-pos-adj{{color:#7e22ce;background:#faf5ff;border-color:#e9d5ff}}\
              .jong-pos-adv{{color:#a21caf;background:#fdf4ff;border-color:#f5d0fe}}\
              .jong-pos-aux{{color:#6d28d9;background:#f5f3ff;border-color:#ddd6fe}}\
@@ -958,7 +972,21 @@ impl JongoController {
                     let cls = row.get_attribute("class").unwrap_or_default();
                     let _ = row.set_attribute("class", &format!("{cls} jong-row-selected"));
                     if let Ok(row_html) = row.dyn_into::<web_sys::HtmlElement>() {
-                        let _ = row_html.scroll_into_view_with_bool(false);
+                        if let Ok(Some(scroll_container)) = container.query_selector(".jong-structure-scroll") {
+                            if let Ok(scroll_el) = scroll_container.dyn_into::<web_sys::HtmlElement>() {
+                                let container_rect = scroll_el.get_bounding_client_rect();
+                                let row_rect = row_html.get_bounding_client_rect();
+                                let current_scroll = scroll_el.scroll_top();
+                                // Only scroll if row is outside the visible area
+                                if row_rect.top() < container_rect.top() {
+                                    let delta = (row_rect.top() - container_rect.top()).round() as i32;
+                                    scroll_el.set_scroll_top(current_scroll + delta);
+                                } else if row_rect.bottom() > container_rect.bottom() {
+                                    let delta = (row_rect.bottom() - container_rect.bottom()).round() as i32;
+                                    scroll_el.set_scroll_top(current_scroll + delta);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -968,7 +996,11 @@ impl JongoController {
                     let _ = accordion.set_attribute("class", &format!("{acc_cls} jong-accordion-highlight"));
                     if let Ok(html_el) = accordion.dyn_into::<web_sys::HtmlElement>() {
                         if let Ok(detail_panel_html) = detail_panel.dyn_into::<web_sys::HtmlElement>() {
-                            detail_panel_html.set_scroll_top(html_el.offset_top());
+                            let panel_rect = detail_panel_html.get_bounding_client_rect();
+                            let acc_rect = html_el.get_bounding_client_rect();
+                            let current = detail_panel_html.scroll_top();
+                            let delta = (acc_rect.top() - panel_rect.top()).round() as i32;
+                            detail_panel_html.set_scroll_top(current + delta);
                         }
                     }
                 }
@@ -1347,6 +1379,7 @@ pub fn set_furigana(on: bool) {
     CONTROLLER.with(|c| {
         if let Ok(mut ctrl) = c.try_borrow_mut() {
             ctrl.furigana = on;
+            ctrl.apply_furigana_all();
         }
     });
 }
@@ -1448,7 +1481,11 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                     let _ = accordion.set_attribute("class", &format!("{} jong-accordion-highlight", acc_cls));
                     if let Ok(html_el) = accordion.dyn_into::<web_sys::HtmlElement>() {
                         if let Ok(detail_panel_html) = detail_panel.dyn_into::<web_sys::HtmlElement>() {
-                            detail_panel_html.set_scroll_top(html_el.offset_top());
+                            let panel_rect = detail_panel_html.get_bounding_client_rect();
+                            let acc_rect = html_el.get_bounding_client_rect();
+                            let current = detail_panel_html.scroll_top();
+                            let delta = (acc_rect.top() - panel_rect.top()).round() as i32;
+                            detail_panel_html.set_scroll_top(current + delta);
                         }
                     }
                 }
