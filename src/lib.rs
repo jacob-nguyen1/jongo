@@ -1958,6 +1958,24 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
         }
     }
 
+    if let Some(staircase) = &word.staircase {
+        if staircase.len() > 1 {
+            html.push_str("<div class='jong-card-divider'></div>");
+            html.push_str(&format!(
+                "<div class='jong-section-label' data-font-tier='section-label' style='font-size:{label_px}px'>Conjugation breakdown</div>"
+            ));
+            html.push_str("<div class='jong-staircase-box'>");
+            for step in staircase {
+                html.push_str(&format!(
+                    "<div class='jong-staircase-step'>{} · {}</div>",
+                    html_escape(&step.text),
+                    html_escape(&step.description)
+                ));
+            }
+            html.push_str("</div>");
+        }
+    }
+
     if let Some(p) = particle {
         html.push_str("<div class='jong-card-divider'></div>");
         html.push_str(&format!(
@@ -2124,5 +2142,35 @@ mod tests {
     fn furigana_onaka() {
         let tok = make_token("お腹", "お腹", Some("オナカ"), PartOfSpeech::Noun, PartOfSpeechSubcategory1::Unbound);
         assert_eq!(format_word_html(&tok, true), "お<ruby>腹<rt>なか</rt></ruby>");
+    }
+
+    #[test]
+    fn render_detail_shows_staircase() {
+        let tok = ProcToken {
+            full: "食べた".to_string(),
+            base: "食べる".to_string(),
+            pos: PartOfSpeech::Verb,
+            sub1: PartOfSpeechSubcategory1::Unbound,
+            sub2: PartOfSpeechSubcategory2::X,
+            conjugation: None,
+            staircase: Some(vec![
+                crate::grammar::StaircaseStep {
+                    text: "食べる".to_string(),
+                    description: "Plain form".to_string(),
+                },
+                crate::grammar::StaircaseStep {
+                    text: "食べた".to_string(),
+                    description: "Past".to_string(),
+                },
+            ]),
+            reading: Some("タベ".to_string()),
+        };
+
+        let ctx = RenderContext::default();
+        let html = render_detail(&ctx, &tok, None, None, None, None);
+        assert!(html.contains("Conjugation breakdown"));
+        assert!(html.contains("jong-staircase-box"));
+        assert!(html.contains("食べた"));
+        assert!(html.contains("Past"));
     }
 }
