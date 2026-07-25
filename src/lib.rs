@@ -2246,6 +2246,9 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
 
             let primary = selected_def.unwrap_or(0);
             let is_resolved = selected_def.is_some();
+            let single = hit.glosses.len() == 1;
+            // Mark "selected" only when a choice has been made, or when there's only one gloss.
+            let show_selected = is_resolved || single;
 
             let toggle_html = if is_resolved && hit.glosses.len() > 1 {
                 let hidden_count = hit.glosses.len() - 1;
@@ -2285,7 +2288,7 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
                 let is_primary = i == primary;
                 let (display, extra_class, opacity) = if is_resolved && !is_primary {
                     ("none", "", "0.5")
-                } else if is_primary {
+                } else if is_primary && show_selected {
                     ("block", " selected", "1")
                 } else {
                     ("block", "", "1")
