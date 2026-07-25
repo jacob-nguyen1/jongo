@@ -20,10 +20,10 @@ const MIN_WINDOW_WIDTH: f64 = 360.0;
 // Raise the minimum default height so short popups are a bit taller by default
 const MIN_WINDOW_HEIGHT: f64 = 280.0;
 // Default and max sizes for the initial popup
-const DEFAULT_WINDOW_WIDTH: f64 = 760.0;
-const DEFAULT_WINDOW_HEIGHT: f64 = 420.0;
-const MAX_DEFAULT_WINDOW_WIDTH: f64 = 1000.0;
-const MAX_DEFAULT_WINDOW_HEIGHT: f64 = 820.0;
+const DEFAULT_WINDOW_WIDTH: f64 = 900.0;
+const DEFAULT_WINDOW_HEIGHT: f64 = 520.0;
+const MAX_DEFAULT_WINDOW_WIDTH: f64 = 1200.0;
+const MAX_DEFAULT_WINDOW_HEIGHT: f64 = 1000.0;
 const RESIZE_EDGE: f64 = 10.0;
 const BASE_Z_INDEX: u32 = 10_000;
 const DEFAULT_FONT_SIZE: u32 = 20;
@@ -764,8 +764,9 @@ impl JongoController {
              .jong-def-list{{list-style:none;margin:0;padding:0}}\
              .jong-def-item{{padding:4px 0 4px 10px;margin-bottom:2px;color:#555;border-left:2px solid transparent;line-height:1.4}}\
              .jong-def-item.selected{{font-weight:700;color:#111;border-left-color:#22c55e}}\
-             .jong-def-toggle{{margin-top:6px;text-align:center}}\
-             .jong-def-toggle button{{background:none;border:none;color:#4a9;cursor:pointer;text-decoration:underline;font-size:inherit;padding:0}}\
+             .jong-def-toggle{{margin-top:4px;padding-left:10px}}\
+             .jong-def-toggle button{{background:none;border:none;color:#888;cursor:pointer;padding:0;font:inherit;font-size:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px;letter-spacing:.02em}}\
+             .jong-def-toggle button:hover{{color:#111}}\
              .jong-particle-row{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}\
              .jong-particle-chip{{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:2px 8px;border:1px solid #ddd;border-radius:6px;font-weight:600;background:#fafafa}}\
              .jong-tag-row{{display:flex;flex-wrap:wrap;gap:6px}}\
