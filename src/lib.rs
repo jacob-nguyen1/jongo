@@ -309,7 +309,7 @@ fn render_context_from_controller() -> RenderContext {
         if let Ok(b) = c.try_borrow() {
             RenderContext {
                 font_size: b.font_size,
-                furigana: b.furigana,
+                furigana: true,
                 tooltips: b.tooltips,
             }
         } else {
@@ -694,7 +694,7 @@ impl JongoController {
         let mut chunk_data: Vec<ChunkData> = Vec::new();
         let ctx = RenderContext {
             font_size: self.font_size,
-            furigana: self.furigana,
+            furigana: true,  // Always render ruby; toggle via data-jong-furi + CSS
             tooltips: self.tooltips,
         };
         let left = match crate::sentence::build_sentence(tokens) {
