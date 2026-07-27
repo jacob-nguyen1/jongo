@@ -39,6 +39,7 @@ enum ResizeCorner {
     Se,
 }
 
+
 fn hit_resize_corner(el: &web_sys::HtmlElement, client_x: f64, client_y: f64) -> Option<ResizeCorner> {
     let rect = el.get_bounding_client_rect();
     let x = client_x - rect.left();
@@ -577,11 +578,33 @@ impl JongoController {
     }
 
 
+    fn prompt(&mut self) {
         if !self.enabled {
             return;
         }
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
+
+        // Check for an existing text selection first, but only if cursor is over it
+        if let Some(selection) = window.get_selection().ok().flatten() {
+            let selected_text = selection.to_string().as_string().unwrap_or_default();
+            let trimmed = selected_text.trim();
+            if !trimmed.is_empty() && selection.range_count() > 0 {
+                if let Ok(range) = selection.get_range_at(0) {
+                    let rect = range.get_bounding_client_rect();
+                    let cursor_over_selection = (self.mouse_x as f64) >= rect.left()
+                        && (self.mouse_x as f64) <= rect.right()
+                        && (self.mouse_y as f64) >= rect.top()
+                        && (self.mouse_y as f64) <= rect.bottom();
+                    let char_count = trimmed.chars().count();
+                    if cursor_over_selection && char_count <= MAX_SELECTION_CHARS {
+                        self.show_prompt_for_selection(trimmed, &rect);
+                        return;
+                    }
+                }
+            }
+        }
+
         let Some(caret) = document.caret_position_from_point(self.mouse_x, self.mouse_y) else { return; };
         let Some(node) = caret.offset_node() else { return; };
         let offset = caret.offset();
