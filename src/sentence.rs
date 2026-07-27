@@ -313,11 +313,6 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
                     });
                 }
                 i = j + 1; // Skip past the closing parenthesis
-                
-                // If there's a following `と`, skip it too because it's the quotation particle
-                if i < tokens.len() && tokens[i].full == "と" && tokens[i].sub2 == PartOfSpeechSubcategory2::Quotation {
-                    i += 1;
-                }
                 continue;
             }
         }
@@ -357,6 +352,23 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
 
             // い-adjective modifier
             ProcToken { pos: PartOfSpeech::Adjective, .. } if next_pos == Some(PartOfSpeech::Noun) => {
+                assign_particle_roles(&mut chunks);
+                let mut adj_chunk = chunks.pop().unwrap();
+                let adverbs = extract_adverbs(&mut chunks);
+                
+                let extracted = std::mem::take(&mut adj_chunk.modifiers);
+                let (nested_adverbs, others): (Vec<_>, Vec<_>) = extracted.into_iter().partition(|m| matches!(m, Modifier::AdverbChunk(_)));
+                
+                adj_chunk.modifiers = nested_adverbs;
+                adj_chunk.modifiers.extend(adverbs);
+                
+                pending_modifiers.extend(others);
+                pending_modifiers.push(Modifier::AdjectiveChunk(Box::new(adj_chunk)));
+                i += 1;
+            }
+
+            // Adnominal adjective (rentaishi) modifier — 同じ, この, その, etc.
+            ProcToken { pos: PartOfSpeech::AdnominalAdjective, .. } if next_pos == Some(PartOfSpeech::Noun) => {
                 assign_particle_roles(&mut chunks);
                 let mut adj_chunk = chunks.pop().unwrap();
                 let adverbs = extract_adverbs(&mut chunks);
@@ -592,6 +604,20 @@ pub fn build_sentence(mut tokens: Vec<ProcToken>) -> Option<Sentence> {
 
             // Quotation と — Lindera reliably tags as sub2 == Quotation
             ProcToken { pos: PartOfSpeech::Particle, sub2: PartOfSpeechSubcategory2::Quotation, .. } => {
+                // If the preceding chunk is a bracketed quotation, attach と to it as its particle
+                if let Some(last) = chunks.last() {
+                    let is_quotation_chunk = last.modifiers.len() == 1 
+                        && matches!(last.modifiers[0], Modifier::Quotation(_));
+                    if is_quotation_chunk {
+                        let mut chunk = chunks.pop().unwrap();
+                        chunk.particle = Some(current.clone());
+                        chunk.particle_role = Some(ParticleRole::Quotation);
+                        chunks.push(chunk);
+                        i += 1;
+                        continue;
+                    }
+                }
+                
                 if let Some(next) = tokens.get(i + 1) {
                     if next.pos == PartOfSpeech::Verb && chunks.len() >= 1 {
                         let mut chunk = chunks.pop().unwrap(); // Remove the preceding chunk
@@ -711,7 +737,13 @@ fn package_clause(mut chunks: Vec<Chunk>, relation: ClauseRelation, connective: 
     let mut dependents = Vec::new();
     for mut c in chunks {
         if c.modifiers.len() == 1 && matches!(c.modifiers[0], Modifier::Quotation(_)) {
-            dependents.push(c.modifiers.pop().unwrap());
+            // If the quotation chunk has a particle (like と), keep the whole chunk
+            // so the particle renders. Otherwise unwrap to just the quotation modifier.
+            if c.particle.is_some() {
+                dependents.push(Modifier::NounChunk(Box::new(c)));
+            } else {
+                dependents.push(c.modifiers.pop().unwrap());
+            }
         } 
         else if c.word.pos == PartOfSpeech::Adverb || c.particle_role == Some(ParticleRole::Adverbial) {
             dependents.push(Modifier::AdverbChunk(Box::new(c)));

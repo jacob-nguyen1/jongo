@@ -53,14 +53,15 @@ pub fn generate_prompt(ast: &Sentence, sentence_str: &str, context: &str) -> Str
             }
         }
 
-        // Collect vocabulary with multiple definitions
+        // Collect vocabulary with multiple definitions (skip particles)
         let is_proper_noun = chunk.word.sub1 == crate::labels::PartOfSpeechSubcategory1::ProperNoun;
+        let is_particle = chunk.word.pos == crate::labels::PartOfSpeech::Particle;
         let glosses: Vec<String> = crate::jmdict::lookup(&chunk.word.base, chunk.word.pos.clone(), is_proper_noun)
             .into_iter()
             .flat_map(|r| r.glosses)
             .collect();
 
-        if glosses.len() > 1 {
+        if glosses.len() > 1 && !is_particle {
             vocabulary.push((id, chunk.word.full.clone(), glosses));
         }
     }

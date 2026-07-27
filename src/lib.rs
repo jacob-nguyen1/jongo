@@ -2231,7 +2231,12 @@ fn render_row(
         )
     };
 
-    let word_html = format_word_html(word, ctx.furigana);
+    let word_html = if word.pos == PartOfSpeech::Symbol 
+        && (word.full == "「" || word.full == "『") {
+        String::new()
+    } else {
+        format_word_html(word, ctx.furigana)
+    };
 
     let mut html = format!(
         "<div class='jong-row' data-chunk-id='{id}' data-font-tier='{tier}' style='font-size:{size};line-height:1.2;padding:0 4px'>\
@@ -2266,6 +2271,13 @@ fn render_row(
 fn render_all_details(ctx: &RenderContext, chunk_data: &[ChunkData]) -> String {
     let mut html = String::new();
     for (i, chunk) in chunk_data.iter().enumerate() {
+        // Skip placeholder quotation chunks (opening bracket)
+        let is_quotation_placeholder = chunk.word.pos == PartOfSpeech::Symbol
+            && (chunk.word.full == "「" || chunk.word.full == "『");
+        if is_quotation_placeholder {
+            continue;
+        }
+        
         let detail_body = render_detail(
             ctx,
             &chunk.word,
@@ -2327,8 +2339,10 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
     }
     html.push_str("</div>");
 
+    let is_particle = word.pos == PartOfSpeech::Particle;
+    
     match dict_hit {
-        Some(hit) => {
+        Some(hit) if !is_particle => {
             let type_hint = match hit.source {
                 crate::jmdict::DictSource::JMnedict => format!(" [{}]", hit.noun_type.label()),
                 crate::jmdict::DictSource::JMdict => String::new(),
@@ -2340,7 +2354,6 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
             let primary = selected_def.unwrap_or(0);
             let is_resolved = selected_def.is_some();
             let single = hit.glosses.len() == 1;
-            // Mark "selected" only when a choice has been made, or when there's only one gloss.
             let show_selected = is_resolved || single;
 
             let toggle_html = if is_resolved && hit.glosses.len() > 1 {
@@ -2395,9 +2408,16 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
 
             html.push_str("</div>");
         }
+        Some(_) if is_particle => {
+            html.push_str("<div class='jong-card-divider'></div>");
+            html.push_str(&format!(
+                "<div class='jong-no-entry'>Grammatical particle</div>"
+            ));
+        }
         None => {
             html.push_str("<div class='jong-no-entry'>No dictionary entry</div>");
         }
+        _ => {}
     }
 
     if let Some(staircase) = &word.staircase {
