@@ -1,5 +1,5 @@
 use phf::phf_map;
-use std::sync::LazyLock;
+
 use strum_macros::AsRefStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr)]

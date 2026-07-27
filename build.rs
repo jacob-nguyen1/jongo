@@ -105,6 +105,7 @@ struct JmdictKana {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct JmdictSense {
     #[serde(rename = "partOfSpeech", default)]
     part_of_speech: Vec<String>,

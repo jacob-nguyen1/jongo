@@ -128,6 +128,7 @@ async fn fetch_llm(prompt: &str) -> JsValue {
     }
 }
 
+#[allow(dead_code)]
 fn persist_dark_mode(on: bool) {
     let global = js_sys::global();
     let Ok(func_val) = js_sys::Reflect::get(&global, &JsValue::from_str("__jongo_set_dark_mode")) else {
@@ -317,8 +318,9 @@ fn render_context_from_controller() -> RenderContext {
     })
 }
 
-fn tip_attrs(_ctx: &RenderContext, _tip: &str) -> String {
-    String::new()
+fn tip_attrs(_ctx: &RenderContext, tip: &str) -> String {
+    let escaped = html_escape(tip);
+    format!(" data-tip=\"{escaped}\" title=\"{escaped}\"")
 }
 
 fn conjugation_explanation(label: &str) -> &'static str {
@@ -785,7 +787,7 @@ impl JongoController {
             "<div class='jong-structure-scroll'><div class='jong-structure-inner'>{left}</div></div>\
              <div class='jong-detail'>{all_details}</div>"
         );
-        let analysis_body_rc = Rc::new(analysis_body.clone());
+
 
         let html = format!(
             "<style>\
@@ -1196,13 +1198,39 @@ impl JongoController {
         // Legend button toggles legend panel ↔ analysis
         if let Ok(Some(legend_btn)) = element.query_selector(".jong-legend") {
             let element_legend = element.clone();
-            let analysis_body_rc = analysis_body_rc.clone();
             let legend_btn_for_cb = legend_btn.clone();
+            let chunk_data_for_legend = chunk_data_rc.clone();
+            let left_html_cached = left.clone();
             let legend_cb = Closure::<dyn FnMut()>::new(move || {
                 let Ok(Some(body)) = element_legend.query_selector(".jong-body") else { return };
                 let on_legend = body.query_selector(".jong-panel").ok().flatten().is_some();
                 if on_legend {
-                    body.set_inner_html(&analysis_body_rc);
+                    let ctx = render_context_from_controller();
+                    let cd = chunk_data_for_legend.borrow();
+                    let all_details = render_all_details(&ctx, &cd);
+                    let body_html = format!(
+                        "<div class='jong-structure-scroll'><div class='jong-structure-inner'>{}</div></div>\
+                         <div class='jong-detail'>{}</div>",
+                        left_html_cached, all_details
+                    );
+                    body.set_inner_html(&body_html);
+
+                    // Re-apply resolved badges to tree rows after re-rendering
+                    for (idx, chunk) in cd.iter().enumerate() {
+                        if let Some(role) = &chunk.role {
+                            if !matches!(role, ParticleRole::Ambiguous(_)) {
+                                let selector = format!(".jong-row[data-chunk-id='{}'] .ambiguous-badge", idx);
+                                if let Ok(Some(badge)) = element_legend.query_selector(&selector) {
+                                    badge.set_inner_html(role.badge());
+                                    badge.set_class_name("resolved-badge jong-role-badge");
+                                    let tip = role.explanation();
+                                    let _ = badge.set_attribute("data-tip", tip);
+                                    let _ = badge.set_attribute("title", tip);
+                                }
+                            }
+                        }
+                    }
+
                     if let Ok(html_body) = body.dyn_into::<web_sys::HtmlElement>() {
                         let _ = html_body.style().set_property("display", "flex");
                         let _ = html_body.style().set_property("flex-direction", "row");
@@ -1677,9 +1705,9 @@ fn render_natural_sentence(ctx: &RenderContext, sentence: &str, chunks: &[ChunkD
     let mut sorted_chunks: Vec<(usize, &ChunkData)> = chunks
         .iter()
         .enumerate()
-        .filter_map(|(id, c)| c.surface_range.map(|(start, _)| (id, c)))
+        .filter_map(|(id, c)| c.surface_range.map(|(_, _)| (id, c)))
         .collect();
-    sorted_chunks.sort_by_key(|(id, c)| c.surface_range.unwrap().0);
+    sorted_chunks.sort_by_key(|(_id, c)| c.surface_range.unwrap().0);
 
     for (id, chunk) in sorted_chunks {
         let (start, end) = chunk.surface_range.unwrap();
@@ -1688,7 +1716,6 @@ fn render_natural_sentence(ctx: &RenderContext, sentence: &str, chunks: &[ChunkD
         if cursor < start {
             let gap: String = chars[cursor..start].iter().collect();
             html.push_str(&html_escape(&gap));
-            cursor = start;
         }
 
         // Segment
@@ -1946,6 +1973,7 @@ fn has_kanji(s: &str) -> bool {
     s.chars().any(|c| matches!(c, '\u{4e00}'..='\u{9faf}' | '\u{3400}'..='\u{4dbf}'))
 }
 
+#[allow(dead_code)]
 fn has_kana(s: &str) -> bool {
     s.chars().any(|c| ('\u{3040}'..='\u{30ff}').contains(&c))
 }
@@ -1954,6 +1982,7 @@ fn is_kanji(c: char) -> bool {
     matches!(c, '\u{4e00}'..='\u{9faf}' | '\u{3400}'..='\u{4dbf}')
 }
 
+#[allow(dead_code)]
 fn base_reading_for_furigana(word: &ProcToken) -> Option<String> {
     // Prefer token reading (inflected / context-aware) when available, otherwise consult dictionary base reading.
     if let Some(r) = &word.reading {
@@ -1972,7 +2001,8 @@ fn base_reading_for_furigana(word: &ProcToken) -> Option<String> {
     None
 }
 
-fn strip_common_ending(mut s: String) -> String {
+#[allow(dead_code)]
+fn strip_common_ending(s: String) -> String {
     // Unicode-safe removal of common dictionary endings to approximate verb/adjective stems
     // Prefer using strip_suffix so we don't slice by byte counts.
     if let Some(rest) = s.strip_suffix('る') {

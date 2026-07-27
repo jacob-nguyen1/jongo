@@ -189,7 +189,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
         // conjugation detection
         let mut should_merge = false;
 
-        let is_mergeable_auxiliary = |prev: &Token, aux: &Token| -> bool {
+        let is_mergeable_auxiliary = |_prev: &Token, aux: &Token| -> bool {
             if aux.pos != PartOfSpeech::AuxiliaryVerb {
                 return false;
             }

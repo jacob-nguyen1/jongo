@@ -10,6 +10,7 @@ struct NameData<'a> {
 
 /// Must match `NameData` and `NameEntry` in build.rs (postcard schema).
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct NameEntry<'a> {
     #[serde(borrow)]
     kanji: Vec<&'a str>,

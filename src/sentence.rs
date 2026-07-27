@@ -1,5 +1,5 @@
 use crate::labels::{PartOfSpeech, PartOfSpeechSubcategory1, PartOfSpeechSubcategory2, ClauseRelation, ParticleRole};
-use crate::grammar::{analyze_sentence, ProcToken};
+use crate::grammar::ProcToken;
 
 #[derive(Debug)]
 pub struct Sentence {
