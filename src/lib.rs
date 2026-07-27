@@ -2458,8 +2458,19 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
                 ));
             }
             None => {
+                let (label, tip) = if p.full == "な" {
+                    ("Adjective marker", "Attributive form of だ; links a な-adjective to the noun it modifies.")
+                } else {
+                    ("Unknown", "")
+                };
+                let tip_attr = if !tip.is_empty() {
+                    tip_attrs(ctx, tip)
+                } else {
+                    String::new()
+                };
                 html.push_str(&format!(
-                    "<span class='jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'>Unknown</span>"
+                    "<span class='resolved-badge jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                    tip_attr, label
                 ));
             }
         }
