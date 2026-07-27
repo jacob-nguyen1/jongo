@@ -1,5 +1,5 @@
 use crate::sentence::{Sentence, Chunk, Modifier};
-use crate::labels::ParticleRole;
+use crate::labels::{ParticleRole, ClauseRelation};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
@@ -11,12 +11,13 @@ pub struct LlmResponse {
 pub struct LlmDisambiguation {
     pub chunk_id: usize,
     #[serde(rename = "type")]
-    pub disambiguation_type: String, // "particle_role" or "vocabulary"
-    pub result: serde_json::Value, // String for particle_role, integer for vocabulary
+    pub disambiguation_type: String, // "particle_role", "clause_relation", or "vocabulary"
+    pub result: serde_json::Value, // String for particle_role/clause_relation, integer for vocabulary
 }
 
 pub fn generate_prompt(ast: &Sentence, sentence_str: &str, context: &str) -> String {
     let mut ambiguous_particles: Vec<(usize, String, Vec<String>)> = Vec::new();
+    let mut ambiguous_relations: Vec<(usize, String, Vec<String>)> = Vec::new();
     let mut vocabulary: Vec<(usize, String, Vec<String>)> = Vec::new();
     let mut chunk_id = 0usize;
 
@@ -24,19 +25,20 @@ pub fn generate_prompt(ast: &Sentence, sentence_str: &str, context: &str) -> Str
         chunk: &Chunk,
         chunk_id: &mut usize,
         ambiguous_particles: &mut Vec<(usize, String, Vec<String>)>,
+        ambiguous_relations: &mut Vec<(usize, String, Vec<String>)>,
         vocabulary: &mut Vec<(usize, String, Vec<String>)>,
     ) {
         // Process nested modifiers FIRST (same order as render_chunk_group)
         for modif in &chunk.modifiers {
             match modif {
                 Modifier::NounChunk(c) | Modifier::AdjectiveChunk(c) | Modifier::AdverbChunk(c) | Modifier::Limitation(c) => {
-                    process_chunk(c, chunk_id, ambiguous_particles, vocabulary);
+                    process_chunk(c, chunk_id, ambiguous_particles, ambiguous_relations, vocabulary);
                 }
                 Modifier::Clause(c) => {
-                    process_chunk(&c.predicate, chunk_id, ambiguous_particles, vocabulary);
+                    process_chunk(&c.predicate, chunk_id, ambiguous_particles, ambiguous_relations, vocabulary);
                 }
                 Modifier::Quotation(s) => {
-                    process_sentence(s, chunk_id, ambiguous_particles, vocabulary);
+                    process_sentence(s, chunk_id, ambiguous_particles, ambiguous_relations, vocabulary);
                 }
             }
         }
@@ -70,14 +72,26 @@ pub fn generate_prompt(ast: &Sentence, sentence_str: &str, context: &str) -> Str
         sentence: &Sentence,
         chunk_id: &mut usize,
         ambiguous_particles: &mut Vec<(usize, String, Vec<String>)>,
+        ambiguous_relations: &mut Vec<(usize, String, Vec<String>)>,
         vocabulary: &mut Vec<(usize, String, Vec<String>)>,
     ) {
         for clause in &sentence.clauses {
-            process_chunk(&clause.predicate, chunk_id, ambiguous_particles, vocabulary);
+            process_chunk(&clause.predicate, chunk_id, ambiguous_particles, ambiguous_relations, vocabulary);
+
+            // Connective ID assignment MUST mirror render_clause: after the predicate is rendered,
+            // the connective is pushed onto chunk_data.
+            if let Some(conn) = &clause.connective {
+                let id = *chunk_id;
+                *chunk_id += 1;
+                if let ClauseRelation::Ambiguous(candidates) = &clause.relation {
+                    let cs: Vec<String> = candidates.iter().map(|c| c.label().to_string()).collect();
+                    ambiguous_relations.push((id, conn.full.clone(), cs));
+                }
+            }
         }
     }
 
-    process_sentence(ast, &mut chunk_id, &mut ambiguous_particles, &mut vocabulary);
+    process_sentence(ast, &mut chunk_id, &mut ambiguous_particles, &mut ambiguous_relations, &mut vocabulary);
 
     let mut prompt = String::new();
     if !context.is_empty() && context != sentence_str {
@@ -88,7 +102,7 @@ pub fn generate_prompt(ast: &Sentence, sentence_str: &str, context: &str) -> Str
     prompt.push_str("Output a JSON object containing an array named 'disambiguations'. Do NOT wrap the output in markdown codeblocks like ```json, just output the raw JSON.\n");
     prompt.push_str("Each item in the array should have:\n");
     prompt.push_str("1. 'chunk_id': The integer chunk ID provided below.\n");
-    prompt.push_str("2. 'type': Either 'particle_role' or 'vocabulary'.\n");
+    prompt.push_str("2. 'type': One of 'particle_role', 'clause_relation', or 'vocabulary'.\n");
     prompt.push_str("3. 'result': The chosen role (exact string from the candidates) OR the chosen definition index (integer).\n\n");
 
     if !ambiguous_particles.is_empty() {
@@ -96,7 +110,15 @@ pub fn generate_prompt(ast: &Sentence, sentence_str: &str, context: &str) -> Str
         for (id, particle, candidates) in &ambiguous_particles {
             prompt.push_str(&format!("- chunk_id {}: particle '{}', candidates: {:?}\n", id, particle, candidates));
         }
-        prompt.push_str("\n");
+        prompt.push_str("\nUse type 'particle_role' for these.\n\n");
+    }
+
+    if !ambiguous_relations.is_empty() {
+        prompt.push_str("For these ambiguous clause connectives, select the correct clause relation from the candidates:\n");
+        for (id, conn, candidates) in &ambiguous_relations {
+            prompt.push_str(&format!("- chunk_id {}: connective '{}', candidates: {:?}\n", id, conn, candidates));
+        }
+        prompt.push_str("\nUse type 'clause_relation' for these.\n\n");
     }
 
     if !vocabulary.is_empty() {
@@ -107,6 +129,7 @@ pub fn generate_prompt(ast: &Sentence, sentence_str: &str, context: &str) -> Str
                 prompt.push_str(&format!("    {}: {}\n", i, def));
             }
         }
+        prompt.push_str("\nUse type 'vocabulary' for these.\n");
     }
 
     prompt

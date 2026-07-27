@@ -1229,6 +1229,18 @@ impl JongoController {
                                 }
                             }
                         }
+                        if let Some(rel) = &chunk.clause_relation {
+                            if !matches!(rel, ClauseRelation::Ambiguous(_)) {
+                                let selector = format!(".jong-row[data-chunk-id='{}'] .ambiguous-badge", idx);
+                                if let Ok(Some(badge)) = element_legend.query_selector(&selector) {
+                                    badge.set_inner_html(rel.label());
+                                    badge.set_class_name("resolved-badge jong-role-badge");
+                                    let tip = rel.explanation();
+                                    let _ = badge.set_attribute("data-tip", tip);
+                                    let _ = badge.set_attribute("title", tip);
+                                }
+                            }
+                        }
                     }
 
                     if let Ok(html_body) = body.dyn_into::<web_sys::HtmlElement>() {
@@ -1619,6 +1631,24 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                         entry.selected_def = Some(def_idx as usize);
                     }
                 }
+            } else if dis.disambiguation_type == "clause_relation" {
+                if let Some(rel_str) = dis.result.as_str() {
+                    if let Some(resolved_rel) = ClauseRelation::from_str(rel_str) {
+                        if let Some(entry) = cd.get_mut(idx) {
+                            entry.clause_relation = Some(resolved_rel.clone());
+                        }
+                        let selector = format!(".jong-row[data-chunk-id='{}'] .ambiguous-badge", idx);
+                        if let Ok(Some(badge)) = container.query_selector(&selector) {
+                            badge.set_inner_html(resolved_rel.label());
+                            badge.set_class_name("resolved-badge jong-role-badge");
+                            let tip = resolved_rel.explanation();
+                            let _ = badge.set_attribute("data-tip", tip);
+                            let _ = badge.set_attribute("title", tip);
+                        }
+                    } else {
+                        console::warn_1(&format!("LLM returned unknown clause relation '{}' for chunk_id {}", rel_str, idx).into());
+                    }
+                }
             }
         }
     }
@@ -1657,6 +1687,7 @@ struct ChunkData {
     particle: Option<ProcToken>,
     secondary_particle: Option<ProcToken>,
     role: Option<ParticleRole>,
+    clause_relation: Option<ClauseRelation>,
     selected_def: Option<usize>,
     surface_range: Option<(usize, usize)>,
 }
@@ -1896,12 +1927,33 @@ fn render_clause(ctx: &RenderContext, clause: &Clause, chunk_data: &mut Vec<Chun
             particle: None,
             secondary_particle: None,
             role: None,
+            clause_relation: Some(clause.relation.clone()),
             selected_def: None,
             surface_range: None,
         });
+        let is_ambig = matches!(clause.relation, ClauseRelation::Ambiguous(_));
+        let badge_class = if is_ambig {
+            "ambiguous-badge jong-role-badge"
+        } else {
+            "resolved-badge jong-role-badge"
+        };
+        let badge_px = scaled_font_px(ctx.font_size, "badge");
+        let rel_tip = match &clause.relation {
+            ClauseRelation::Ambiguous(candidates) => candidates
+                .iter()
+                .map(|c| format!("{}: {}", c.label(), c.explanation()))
+                .collect::<Vec<_>>()
+                .join(" | "),
+            other => other.explanation().to_string(),
+        };
+        let badge_html = format!(
+            " <span class='{badge_class}' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+            tip_attrs(ctx, &rel_tip),
+            clause.relation.label()
+        );
         html.push_str(&format!(
-            "<div class='jong-row jong-clause-connective {rel_class}' data-chunk-id='{id}' data-font-tier='connective' style='margin-top:6px;font-size:{conn_px}px;font-weight:600;color:{color};padding:2px 4px'>{}</div>",
-            conn.full
+            "<div class='jong-row jong-clause-connective {rel_class}' data-chunk-id='{id}' data-font-tier='connective' style='margin-top:6px;font-size:{conn_px}px;font-weight:600;color:{color};padding:2px 4px'>{}{}</div>",
+            conn.full, badge_html
         ));
     }
     html.push_str("</div>");
@@ -2285,6 +2337,7 @@ fn render_row(
         particle: particle.cloned(),
         secondary_particle: secondary_particle.cloned(),
         role: role.cloned(),
+        clause_relation: None,
         selected_def: None,
         surface_range: None,
     });
@@ -2352,6 +2405,7 @@ fn render_all_details(ctx: &RenderContext, chunk_data: &[ChunkData]) -> String {
             chunk.particle.as_ref(),
             chunk.secondary_particle.as_ref(),
             chunk.role.as_ref(),
+            chunk.clause_relation.as_ref(),
             chunk.selected_def,
         );
         html.push_str(&format!(
@@ -2364,7 +2418,7 @@ fn render_all_details(ctx: &RenderContext, chunk_data: &[ChunkData]) -> String {
     html
 }
 
-fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcToken>, secondary_particle: Option<&ProcToken>, role: Option<&ParticleRole>, selected_def: Option<usize>) -> String {
+fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcToken>, secondary_particle: Option<&ProcToken>, role: Option<&ParticleRole>, clause_relation: Option<&ClauseRelation>, selected_def: Option<usize>) -> String {
     let body_px = scaled_font_px(ctx.font_size, "detail");
     let head_px = scaled_font_px(ctx.font_size, "detail-head");
     let xs_px = scaled_font_px(ctx.font_size, "detail-xs");
@@ -2564,6 +2618,45 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
             }
         }
         html.push_str("</div>");
+
+        if let Some(rel) = clause_relation {
+            html.push_str("<div class='jong-card-divider'></div>");
+            html.push_str(&format!(
+                "<div class='jong-section-label' data-font-tier='section-label' style='font-size:{label_px}px'>Clause Relation</div>"
+            ));
+            html.push_str("<div class='jong-particle-row'>");
+            match rel {
+                ClauseRelation::Ambiguous(candidates) => {
+                    html.push_str("<span class='jong-candidate-group'>");
+                    html.push_str(&format!(
+                        "<span class='jong-candidate-label' data-font-tier='detail-xs' style='font-size:{xs_px}px'>Unresolved</span>"
+                    ));
+                    for (i, c) in candidates.iter().enumerate() {
+                        if i > 0 {
+                            html.push_str(&format!(
+                                "<span class='jong-candidate-or' data-font-tier='detail-xs' style='font-size:{xs_px}px'>or</span>"
+                            ));
+                        }
+                        let tip = format!("{}: {}", c.label(), c.explanation());
+                        html.push_str(&format!(
+                            "<span class='jong-candidate-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                            tip_attrs(ctx, &tip),
+                            c.label()
+                        ));
+                    }
+                    html.push_str("</span>");
+                }
+                other => {
+                    let tip = other.explanation();
+                    html.push_str(&format!(
+                        "<span class='resolved-badge jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                        tip_attrs(ctx, tip),
+                        other.label()
+                    ));
+                }
+            }
+            html.push_str("</div>");
+        }
 
         if let Some(sp) = secondary_particle {
             html.push_str("<div class='jong-card-divider'></div>");

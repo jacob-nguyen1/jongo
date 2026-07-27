@@ -333,6 +333,26 @@ impl ClauseRelation {
         ]
     }
 
+    /// Parse a string (from LLM response) back into a ClauseRelation.
+    pub fn from_str(s: &str) -> Option<ClauseRelation> {
+        match s {
+            "Reason" => Some(Self::Reason),
+            "Contrast" => Some(Self::Contrast),
+            "Concessive" => Some(Self::Concessive),
+            "Conditional" => Some(Self::Conditional),
+            "Continuation" => Some(Self::Continuation),
+            "Sequence" => Some(Self::Sequence),
+            "Simultaneous" => Some(Self::Simultaneous),
+            "Temporal" => Some(Self::Temporal),
+            "Until" => Some(Self::Until),
+            "Main" => Some(Self::Main),
+            "Modifier" => Some(Self::Modifier),
+            "Quotation" | "Quote" => Some(Self::Quotation),
+            "Evidential" => Some(Self::Evidential),
+            _ => None,
+        }
+    }
+
     pub fn explanation(&self) -> &'static str {
         match self {
             Self::Reason => "Gives a reason or cause (から、ので).",
