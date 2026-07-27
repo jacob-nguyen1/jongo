@@ -2419,6 +2419,11 @@ fn render_all_details(ctx: &RenderContext, chunk_data: &[ChunkData]) -> String {
 }
 
 fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcToken>, secondary_particle: Option<&ProcToken>, role: Option<&ParticleRole>, clause_relation: Option<&ClauseRelation>, selected_def: Option<usize>) -> String {
+    web_sys::console::log_1(&format!(
+        "render_detail: word={} pos={:?} clause_relation={:?}",
+        word.full, word.pos, clause_relation
+    ).into());
+
     let body_px = scaled_font_px(ctx.font_size, "detail");
     let head_px = scaled_font_px(ctx.font_size, "detail-head");
     let xs_px = scaled_font_px(ctx.font_size, "detail-xs");
@@ -2463,9 +2468,10 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
     html.push_str("</div>");
 
     let is_particle = word.pos == PartOfSpeech::Particle;
+    let is_connective = clause_relation.is_some();
     
     match dict_hit {
-        Some(hit) if !is_particle => {
+        Some(hit) if !is_particle && !is_connective => {
             let type_hint = match hit.source {
                 crate::jmdict::DictSource::JMnedict => format!(" [{}]", hit.noun_type.label()),
                 crate::jmdict::DictSource::JMdict => String::new(),
@@ -2531,13 +2537,13 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
 
             html.push_str("</div>");
         }
-        Some(_) if is_particle => {
+        Some(_) if is_particle && !is_connective => {
             html.push_str("<div class='jong-card-divider'></div>");
             html.push_str(&format!(
                 "<div class='jong-no-entry'>Grammatical particle</div>"
             ));
         }
-        None => {
+        None if !is_connective => {
             html.push_str("<div class='jong-no-entry'>No dictionary entry</div>");
         }
         _ => {}
@@ -2619,45 +2625,6 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
         }
         html.push_str("</div>");
 
-        if let Some(rel) = clause_relation {
-            html.push_str("<div class='jong-card-divider'></div>");
-            html.push_str(&format!(
-                "<div class='jong-section-label' data-font-tier='section-label' style='font-size:{label_px}px'>Clause Relation</div>"
-            ));
-            html.push_str("<div class='jong-particle-row'>");
-            match rel {
-                ClauseRelation::Ambiguous(candidates) => {
-                    html.push_str("<span class='jong-candidate-group'>");
-                    html.push_str(&format!(
-                        "<span class='jong-candidate-label' data-font-tier='detail-xs' style='font-size:{xs_px}px'>Unresolved</span>"
-                    ));
-                    for (i, c) in candidates.iter().enumerate() {
-                        if i > 0 {
-                            html.push_str(&format!(
-                                "<span class='jong-candidate-or' data-font-tier='detail-xs' style='font-size:{xs_px}px'>or</span>"
-                            ));
-                        }
-                        let tip = format!("{}: {}", c.label(), c.explanation());
-                        html.push_str(&format!(
-                            "<span class='jong-candidate-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
-                            tip_attrs(ctx, &tip),
-                            c.label()
-                        ));
-                    }
-                    html.push_str("</span>");
-                }
-                other => {
-                    let tip = other.explanation();
-                    html.push_str(&format!(
-                        "<span class='resolved-badge jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
-                        tip_attrs(ctx, tip),
-                        other.label()
-                    ));
-                }
-            }
-            html.push_str("</div>");
-        }
-
         if let Some(sp) = secondary_particle {
             html.push_str("<div class='jong-card-divider'></div>");
             html.push_str(&format!(
@@ -2672,7 +2639,46 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
         }
     }
 
-    html.push_str("</div>");
+    if let Some(rel) = clause_relation {
+        html.push_str("<div class='jong-card-divider'></div>");
+        html.push_str(&format!(
+            "<div class='jong-section-label' data-font-tier='section-label' style='font-size:{label_px}px'>Clause Relation</div>"
+        ));
+        html.push_str("<div class='jong-particle-row'>");
+        match rel {
+            ClauseRelation::Ambiguous(candidates) => {
+                html.push_str("<span class='jong-candidate-group'>");
+                html.push_str(&format!(
+                    "<span class='jong-candidate-label' data-font-tier='detail-xs' style='font-size:{xs_px}px'>Unresolved</span>"
+                ));
+                for (i, c) in candidates.iter().enumerate() {
+                    if i > 0 {
+                        html.push_str(&format!(
+                            "<span class='jong-candidate-or' data-font-tier='detail-xs' style='font-size:{xs_px}px'>or</span>"
+                        ));
+                    }
+                    let tip = format!("{}: {}", c.label(), c.explanation());
+                    html.push_str(&format!(
+                        "<span class='jong-candidate-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                        tip_attrs(ctx, &tip),
+                        c.label()
+                    ));
+                }
+                html.push_str("</span>");
+            }
+            other => {
+                let tip = other.explanation();
+                html.push_str(&format!(
+                    "<span class='resolved-badge jong-role-badge' data-font-tier='badge' style='font-size:{badge_px}px'{}>{}</span>",
+                    tip_attrs(ctx, tip),
+                    other.label()
+                ));
+            }
+        }
+        html.push_str("</div>");
+    }
+
+    html.push_str("</div>");  // closes .jong-detail-card
     html
 }
 
