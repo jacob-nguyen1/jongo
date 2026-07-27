@@ -14,9 +14,9 @@
 
     // Expose fetcher on globalThis so Rust can read it via js_sys::global()
     globalThis.__jongo_fetch_llm = async (prompt) => {
-      const data = await chrome.storage.local.get(["llmUrl", "llmKey"]);
-      if (!data.llmUrl || !data.llmKey) {
-        console.error("Jongo: LLM URL or Key is missing. Configure in popup.");
+      const data = await chrome.storage.local.get(["llmUrl", "llmKey", "llmModel"]);
+      if (!data.llmUrl || !data.llmKey || !data.llmModel) {
+        console.error("Jongo: LLM URL, Key, or Model is missing. Configure in popup.");
         return null;
       }
       
@@ -27,7 +27,7 @@
           "Authorization": `Bearer ${data.llmKey}`
         },
         body: JSON.stringify({
-          model: "gemma-4-31b-it",
+          model: data.llmModel,
           messages: [{ role: "user", content: prompt }],
           temperature: 0.1
         })

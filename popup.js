@@ -11,6 +11,7 @@ const aiSetupBtn = document.getElementById("ai-setup-btn");
 const aiConfig = document.getElementById("ai-config");
 const llmUrlInput = document.getElementById("llm-url");
 const llmKeyInput = document.getElementById("llm-key");
+const llmModelInput = document.getElementById("llm-model");
 const saveBtn = document.getElementById("save-config");
 const saveStatus = document.getElementById("save-status");
 
@@ -79,6 +80,7 @@ saveBtn.addEventListener("click", async () => {
   await chrome.storage.local.set({
     llmUrl: llmUrlInput.value.trim(),
     llmKey: llmKeyInput.value.trim(),
+    llmModel: llmModelInput.value.trim(),
   });
   saveStatus.style.opacity = "1";
   setTimeout(() => {
@@ -94,6 +96,7 @@ saveBtn.addEventListener("click", async () => {
     "tooltips",
     "llmUrl",
     "llmKey",
+    "llmModel",
   ]);
   updateStatus(data.enabled !== false);
   const dark = !!data.darkMode;
@@ -103,6 +106,7 @@ saveBtn.addEventListener("click", async () => {
   tooltipToggle.checked = data.tooltips !== false;
   if (data.llmUrl) llmUrlInput.value = data.llmUrl;
   if (data.llmKey) llmKeyInput.value = data.llmKey;
+  if (data.llmModel) llmModelInput.value = data.llmModel;
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || changes.darkMode === undefined) return;

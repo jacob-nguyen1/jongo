@@ -1114,7 +1114,7 @@ impl JongoController {
                             }
                         }
                     } else {
-                        btn_html.set_inner_text("Setup Key in Popup");
+                        btn_html.set_inner_text("Configure AI in Popup");
                     }
                 });
             });
