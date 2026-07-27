@@ -1571,12 +1571,14 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                             entry.role = Some(resolved_role.clone());
                         }
                         
-                        // Update the badge in the DOM
-                        if let Some(row) = container.query_selector(&format!("[data-chunk-id='{}']", idx)).unwrap() {
-                            if let Some(badge) = row.query_selector(".ambiguous-badge").unwrap() {
-                                badge.set_inner_html(resolved_role.badge());
-                                badge.set_class_name("resolved-badge jong-role-badge");
-                            }
+                        // Update the badge in the tree row
+                        let selector = format!(".jong-row[data-chunk-id='{}'] .ambiguous-badge", idx);
+                        if let Ok(Some(badge)) = container.query_selector(&selector) {
+                            badge.set_inner_html(resolved_role.badge());
+                            badge.set_class_name("resolved-badge jong-role-badge");
+                            let tip = resolved_role.explanation();
+                            let _ = badge.set_attribute("data-tip", &tip);
+                            let _ = badge.set_attribute("title", &tip);
                         }
                     } else {
                         console::warn_1(&format!("LLM returned unknown role '{}' for chunk_id {}", role_str, idx).into());
