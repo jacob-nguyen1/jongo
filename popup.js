@@ -5,6 +5,7 @@ const mainView = document.getElementById("main-view");
 const settingsView = document.getElementById("settings-view");
 const darkToggle = document.getElementById("dark-toggle");
 const furiganaToggle = document.getElementById("furigana-toggle");
+const inlineDefsToggle = document.getElementById("inline-defs-toggle");
 const aiStatusEl = document.getElementById("ai-status");
 const llmUrlInput = document.getElementById("llm-url");
 const llmKeyInput = document.getElementById("llm-key");
@@ -74,6 +75,10 @@ furiganaToggle.addEventListener("change", async () => {
   await chrome.storage.local.set({ furigana: furiganaToggle.checked });
 });
 
+inlineDefsToggle.addEventListener("change", async () => {
+  await chrome.storage.local.set({ inlineDefs: inlineDefsToggle.checked });
+});
+
 saveBtn.addEventListener("click", async () => {
   const url = llmUrlInput.value.trim();
   const key = llmKeyInput.value.trim();
@@ -98,6 +103,7 @@ saveBtn.addEventListener("click", async () => {
     "enabled",
     "darkMode",
     "furigana",
+    "inlineDefs",
     "llmUrl",
     "llmKey",
     "llmModel",
@@ -110,6 +116,7 @@ saveBtn.addEventListener("click", async () => {
   applyDarkMode(dark);
   
   furiganaToggle.checked = data.furigana !== false;
+  inlineDefsToggle.checked = data.inlineDefs !== false;
   
   if (data.llmUrl) llmUrlInput.value = data.llmUrl;
   if (data.llmKey) llmKeyInput.value = data.llmKey;
