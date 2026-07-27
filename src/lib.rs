@@ -29,6 +29,7 @@ const BASE_Z_INDEX: u32 = 10_000;
 const DEFAULT_FONT_SIZE: u32 = 20;
 const MIN_FONT_SIZE: u32 = 12;
 const MAX_FONT_SIZE: u32 = 32;
+const MAX_SELECTION_CHARS: usize = 300;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ResizeCorner {
@@ -291,7 +292,6 @@ fn pos_badge_class(pos: PartOfSpeech) -> &'static str {
 struct RenderContext {
     font_size: u32,
     furigana: bool,
-    tooltips: bool,
 }
 
 impl Default for RenderContext {
@@ -299,7 +299,6 @@ impl Default for RenderContext {
         Self {
             font_size: DEFAULT_FONT_SIZE,
             furigana: true,
-            tooltips: true,
         }
     }
 }
@@ -310,7 +309,6 @@ fn render_context_from_controller() -> RenderContext {
             RenderContext {
                 font_size: b.font_size,
                 furigana: true,
-                tooltips: b.tooltips,
             }
         } else {
             RenderContext::default()
@@ -318,13 +316,8 @@ fn render_context_from_controller() -> RenderContext {
     })
 }
 
-fn tip_attrs(ctx: &RenderContext, tip: &str) -> String {
-    let escaped = html_escape(tip);
-    if ctx.tooltips {
-        format!(" data-tip=\"{escaped}\" title=\"{escaped}\"")
-    } else {
-        format!(" data-tip=\"{escaped}\"")
-    }
+fn tip_attrs(_ctx: &RenderContext, _tip: &str) -> String {
+    String::new()
 }
 
 fn conjugation_explanation(label: &str) -> &'static str {
@@ -411,7 +404,6 @@ struct JongoController {
     enabled: bool,
     dark_mode: bool,
     furigana: bool,
-    tooltips: bool,
     font_size: u32,
     prompt: Option<web_sys::HtmlElement>,
     analyses: Vec<AnalysisWindow>,
@@ -427,7 +419,6 @@ impl JongoController {
             enabled: true,
             dark_mode: false,
             furigana: true,
-            tooltips: true,
             font_size: DEFAULT_FONT_SIZE,
             prompt: None,
             analyses: Vec::new(),
@@ -465,23 +456,6 @@ impl JongoController {
                 let tier = el.get_attribute("data-font-tier").unwrap_or_default();
                 let size = scaled_font_px(base, &tier);
                 let _ = el.style().set_property("font-size", &format!("{size}px"));
-            }
-        }
-    }
-
-    fn apply_tooltips_all(&self) {
-        for a in &self.analyses {
-            let Ok(nodes) = a.element.query_selector_all("[data-tip]") else { continue };
-            for i in 0..nodes.length() {
-                let Some(node) = nodes.item(i) else { continue };
-                let Ok(el) = node.dyn_into::<web_sys::Element>() else { continue };
-                if self.tooltips {
-                    if let Some(tip) = el.get_attribute("data-tip") {
-                        let _ = el.set_attribute("title", &tip);
-                    }
-                } else {
-                    let _ = el.remove_attribute("title");
-                }
             }
         }
     }
@@ -527,7 +501,82 @@ impl JongoController {
         }
     }
 
-    fn prompt(&mut self) {
+    fn show_prompt_for_selection(&mut self, sentence: &str, rect: &web_sys::DomRect) {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+
+        let element = document
+            .create_element("div")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlElement>()
+            .unwrap();
+        element.set_class_name("jong-prompt-host");
+
+        let scroll_x = window.scroll_x().unwrap_or(0.0);
+        let scroll_y = window.scroll_y().unwrap_or(0.0);
+        let viewport_h = window.inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(600.0);
+        let viewport_w = window.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(800.0);
+        const BTN_EST_W: f64 = 72.0;
+        const BTN_EST_H: f64 = 36.0;
+        const GAP: f64 = 8.0;
+
+        let space_below = viewport_h - rect.bottom();
+        let space_above = rect.top();
+        let place_above = space_below < BTN_EST_H + GAP && space_above > space_below;
+        if place_above {
+            let _ = element.class_list().add_1("jong-prompt-above");
+        }
+
+        let top = if place_above {
+            rect.top() + scroll_y - BTN_EST_H - GAP
+        } else {
+            rect.bottom() + scroll_y + GAP
+        };
+        let caret_mid_x = rect.left() + rect.width() * 0.5;
+        let left = (caret_mid_x + scroll_x)
+            .clamp(scroll_x + BTN_EST_W * 0.5 + 8.0, scroll_x + viewport_w - BTN_EST_W * 0.5 - 8.0);
+
+        element.style().set_property("position", "absolute").unwrap();
+        element.style().set_property("top", &format!("{top}px")).unwrap();
+        element.style().set_property("left", &format!("{left}px")).unwrap();
+        element.set_inner_html(prompt_host_html());
+        apply_prompt_theme(&element, self.dark_mode);
+
+        self.dismiss_prompt_immediate();
+
+        document.body().unwrap().append_child(&element).unwrap();
+
+        let stop_prop = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+            e.stop_propagation();
+        });
+        element
+            .add_event_listener_with_callback("click", stop_prop.as_ref().unchecked_ref())
+            .unwrap();
+        stop_prop.forget();
+
+        let sentence = sentence.to_string();
+        let context = sentence.clone();
+        let btn = element.query_selector("button").unwrap().unwrap();
+
+        let cb = Closure::<dyn FnMut()>::new(move || {
+            let sentence = sentence.clone();
+            let context = context.clone();
+            CONTROLLER.with(|c| {
+                if let Ok(mut ctrl) = c.try_borrow_mut() {
+                    ctrl.analyze(&sentence, &context);
+                    ctrl.dismiss_prompt_immediate();
+                }
+            });
+        });
+
+        btn.add_event_listener_with_callback("click", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+
+        self.prompt = Some(element);
+    }
+
+
         if !self.enabled {
             return;
         }
@@ -695,7 +744,6 @@ impl JongoController {
         let ctx = RenderContext {
             font_size: self.font_size,
             furigana: true,  // Always render ruby; toggle via data-jong-furi + CSS
-            tooltips: self.tooltips,
         };
         let left = match crate::sentence::build_sentence(tokens) {
             Some(s) => {
@@ -1447,16 +1495,6 @@ pub fn set_furigana(on: bool) {
         if let Ok(mut ctrl) = c.try_borrow_mut() {
             ctrl.furigana = on;
             ctrl.apply_furigana_all();
-        }
-    });
-}
-
-#[wasm_bindgen]
-pub fn set_tooltips(on: bool) {
-    CONTROLLER.with(|c| {
-        if let Ok(mut ctrl) = c.try_borrow_mut() {
-            ctrl.tooltips = on;
-            ctrl.apply_tooltips_all();
         }
     });
 }

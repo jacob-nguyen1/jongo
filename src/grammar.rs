@@ -215,6 +215,7 @@ fn filter(line: &[Token]) -> Vec<ProcToken> {
             }
             if base == "だ"
                 && (aux.ctype == CTypes::IrregularTa || aux.ctype == CTypes::IrregularDa)
+                && aux.surface != "な"
             {
                 return true;
             }

@@ -125,28 +125,34 @@
         color: #888;
       }
 
-      .action-btn {
-        width: 100%;
+      .ai-status {
         padding: 10px 12px;
-        margin-bottom: 8px;
-        border: 1px solid #e0e0e0;
+        margin-bottom: 10px;
         border-radius: 8px;
-        background: #fafafa;
-        color: #333;
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        text-align: left;
-        transition: background 0.15s;
+        background: #f9f9f9;
+        border: 1px solid #eee;
+        font-size: 12px;
+        color: #555;
       }
 
-      .action-btn:hover {
-        background: #f0f0f0;
-      }
-
-      .action-btn.open {
-        border-color: #4a9;
+      .ai-status.configured {
+        color: #2a7;
         background: #f0faf5;
+        border-color: #c8e6d8;
+      }
+
+      .ai-status.not-configured {
+        color: #888;
+      }
+
+      .ai-status a {
+        color: #4a9;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .ai-status a:hover {
+        text-decoration: underline;
       }
 
       .hint {
@@ -155,19 +161,54 @@
         line-height: 1.4;
       }
 
-      .ai-config {
-        margin-bottom: 8px;
-        padding: 12px;
-        background: #f9f9f9;
-        border: 1px solid #eee;
-        border-radius: 8px;
+      .settings-view h3 {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 14px;
       }
 
-      .ai-config h3 {
+      .back-btn {
+        background: none;
+        border: none;
+        color: #4a9;
+        cursor: pointer;
         font-size: 12px;
+        padding: 0;
+        margin-bottom: 12px;
+      }
+
+      .settings-section {
+        margin-bottom: 16px;
+      }
+
+      .settings-section-title {
+        font-size: 11px;
         font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #888;
         margin-bottom: 10px;
-        color: #555;
+      }
+
+      .settings-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        background: #f5f5f5;
+        border-radius: 8px;
+        margin-bottom: 8px;
+      }
+
+      .settings-label {
+        font-weight: 500;
+      }
+
+      .settings-hint {
+        font-size: 11px;
+        color: #777;
+        margin-top: 2px;
       }
 
       .input-group {
@@ -213,44 +254,7 @@
         transition: opacity 0.3s;
       }
 
-      .settings-view h3 {
-        font-size: 14px;
-        font-weight: 600;
-        margin-bottom: 14px;
-      }
-
-      .back-btn {
-        background: none;
-        border: none;
-        color: #4a9;
-        cursor: pointer;
-        font-size: 12px;
-        padding: 0;
-        margin-bottom: 12px;
-      }
-
-      .settings-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 10px 12px;
-        background: #f5f5f5;
-        border-radius: 8px;
-        margin-bottom: 8px;
-      }
-
-      .settings-label {
-        font-weight: 500;
-      }
-
-      .settings-hint {
-        font-size: 11px;
-        color: #777;
-        margin-top: 2px;
-      }
-
-      /* Dark mode — base #22242a */
+      /* Dark mode */
       body[data-jong-dark="1"] {
         background: #22242a;
         color: #e8eaef;
@@ -285,28 +289,24 @@
       body[data-jong-dark="1"] .hint,
       body[data-jong-dark="1"] .settings-hint,
       body[data-jong-dark="1"] .input-group label,
-      body[data-jong-dark="1"] .ai-config h3 {
+      body[data-jong-dark="1"] .settings-section-title {
         color: #a8acb8;
       }
 
-      body[data-jong-dark="1"] .action-btn {
+      body[data-jong-dark="1"] .ai-status {
         background: #2a2c34;
         border-color: #3e404a;
-        color: #e8eaef;
+        color: #a8acb8;
       }
 
-      body[data-jong-dark="1"] .action-btn:hover {
-        background: #32343e;
-      }
-
-      body[data-jong-dark="1"] .action-btn.open {
+      body[data-jong-dark="1"] .ai-status.configured {
         background: #2d4a3e;
         border-color: #4a9;
+        color: #8fd4b0;
       }
 
-      body[data-jong-dark="1"] .ai-config {
-        background: #2a2c34;
-        border-color: #3e404a;
+      body[data-jong-dark="1"] .ai-status a {
+        color: #8fd4b0;
       }
 
       body[data-jong-dark="1"] .input-group input {
@@ -340,10 +340,45 @@
         <span id="status" class="status on">Enabled</span>
       </div>
 
-      <button class="action-btn" id="ai-setup-btn" type="button">AI setup</button>
+      <div id="ai-status" class="ai-status not-configured">
+        AI disambiguation: not configured
+      </div>
 
-      <div id="ai-config" class="ai-config hidden">
-        <h3>AI Disambiguation</h3>
+      <p class="hint">Hold <strong>Shift</strong> and hover over Japanese text to analyze a sentence. Use <strong>A−</strong> / <strong>A+</strong> in the analysis window to adjust text size.</p>
+    </div>
+
+    <div id="settings-view" class="settings-view hidden">
+      <h3>Settings</h3>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Display</div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Dark mode</div>
+            <div class="settings-hint">Extension popup and analysis windows</div>
+          </div>
+          <label class="switch" title="Toggle dark mode">
+            <input type="checkbox" id="dark-toggle" />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Furigana</div>
+            <div class="settings-hint">Readings above kanji</div>
+          </div>
+          <label class="switch" title="Toggle furigana">
+            <input type="checkbox" id="furigana-toggle" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">AI Disambiguation</div>
+
         <div class="input-group">
           <label for="llm-url">Endpoint URL</label>
           <input type="text" id="llm-url" placeholder="https://api.openai.com/v1/chat/completions" />
@@ -358,46 +393,6 @@
         </div>
         <button class="save-btn" id="save-config" type="button">Save</button>
         <div id="save-status">Saved!</div>
-      </div>
-
-      <p class="hint">Hold <strong>Shift</strong> and hover over Japanese text to analyze a sentence. Use <strong>A−</strong> / <strong>A+</strong> in the analysis window to adjust text size.</p>
-    </div>
-
-    <div id="settings-view" class="settings-view hidden">
-      <button class="back-btn" id="settings-back" type="button">← Back</button>
-      <h3>Settings</h3>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Dark mode</div>
-          <div class="settings-hint">Extension popup and analysis windows</div>
-        </div>
-        <label class="switch" title="Toggle dark mode">
-          <input type="checkbox" id="dark-toggle" />
-          <span class="slider"></span>
-        </label>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Furigana</div>
-          <div class="settings-hint">Readings above kanji</div>
-        </div>
-        <label class="switch" title="Toggle furigana">
-          <input type="checkbox" id="furigana-toggle" />
-          <span class="slider"></span>
-        </label>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Label tooltips</div>
-          <div class="settings-hint">Show grammar explanations on hover</div>
-        </div>
-        <label class="switch" title="Toggle label tooltips">
-          <input type="checkbox" id="tooltip-toggle" />
-          <span class="slider"></span>
-        </label>
       </div>
     </div>
 

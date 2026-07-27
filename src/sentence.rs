@@ -936,7 +936,7 @@ mod tests {
         // 2nd case: 昨日 stays in the main clause.
         // Fix 5: によると evidential expression
         // Fix 6: Bracketed quotation
-        let text = "先日、薬草を探しに森に出かけてみれば出会ったのは、村人その壱、弐、参という名の人さらいだった。";
+        let text = "友達がくれたりんごを静かな公園で食べたから、家に帰った";
         
         for sentence in text.split_inclusive('。') {
             let sentence = sentence.trim();

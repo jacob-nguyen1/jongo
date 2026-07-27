@@ -1,15 +1,14 @@
 (async () => {
   try {
-    const { enabled = true, darkMode = false, furigana = true, fontSize = 20, tooltips = true } = await chrome.storage.local.get([
+    const { enabled = true, darkMode = false, furigana = true, fontSize = 20 } = await chrome.storage.local.get([
       "enabled",
       "darkMode",
       "furigana",
-      "fontSize",
-      "tooltips"
+      "fontSize"
     ]);
 
     const src = chrome.runtime.getURL("pkg/jongo.js");
-    const { default: init, content_start, set_enabled, set_dark_mode, set_furigana, set_font_size, set_tooltips } = await import(src);
+    const { default: init, content_start, set_enabled, set_dark_mode, set_furigana, set_font_size } = await import(src);
     await init({ module_or_path: chrome.runtime.getURL("pkg/jongo_bg.wasm") });
 
     // Expose fetcher on globalThis so Rust can read it via js_sys::global()
@@ -56,7 +55,6 @@
     set_dark_mode(!!darkMode);
     set_furigana(!!furigana);
     set_font_size(Number(fontSize) || 20);
-    set_tooltips(tooltips !== false);
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
@@ -71,9 +69,6 @@
       }
       if (changes.fontSize !== undefined) {
         set_font_size(Number(changes.fontSize.newValue) || 20);
-      }
-      if (changes.tooltips !== undefined) {
-        set_tooltips(changes.tooltips.newValue !== false);
       }
     });
   } catch (e) {
