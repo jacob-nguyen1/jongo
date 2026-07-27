@@ -2104,6 +2104,74 @@ fn try_render_multi_run(full_chars: &[char], h_reading: &str) -> Option<String> 
     Some(out)
 }
 
+fn compute_surface_reading(word: &ProcToken) -> Option<String> {
+    if !has_kanji(&word.full) {
+        // No kanji — the surface is already the reading
+        return Some(word.full.clone());
+    }
+
+    let reading = word.reading.as_ref()?;
+    let h_reading = katakana_to_hiragana(reading);
+    if h_reading.is_empty() {
+        return None;
+    }
+
+    let full_chars: Vec<char> = word.full.chars().collect();
+    let prefix_kana_len = full_chars.iter().take_while(|&&c| !is_kanji(c)).count();
+    let kanji_run_len = full_chars[prefix_kana_len..]
+        .iter()
+        .take_while(|&&c| is_kanji(c))
+        .count();
+
+    if kanji_run_len == 0 {
+        return Some(word.full.clone());
+    }
+    let kanji_end = prefix_kana_len + kanji_run_len;
+
+    // Multi-run case fallback: just return the full hiragana reading
+    if full_chars[kanji_end..].iter().any(|&c| is_kanji(c)) {
+        return Some(h_reading);
+    }
+
+    let prefix_kana: String = full_chars[..prefix_kana_len].iter().collect();
+    let kana_tail: String = full_chars[kanji_end..].iter().collect();
+
+    let prefix_kana_hira = katakana_to_hiragana(&prefix_kana);
+    let kana_tail_hira = katakana_to_hiragana(&kana_tail);
+
+    let h_chars: Vec<char> = h_reading.chars().collect();
+    let prefix_chars: Vec<char> = prefix_kana_hira.chars().collect();
+    if prefix_chars.len() > h_chars.len() || h_chars[..prefix_chars.len()] != prefix_chars[..] {
+        return Some(h_reading);
+    }
+    let reading_after_prefix = &h_chars[prefix_chars.len()..];
+
+    let tail_chars: Vec<char> = kana_tail_hira.chars().collect();
+    let mut covered_len = 0usize;
+    let max_len = tail_chars.len().min(reading_after_prefix.len().saturating_sub(1));
+    for k in (1..=max_len).rev() {
+        if tail_chars[..k] == reading_after_prefix[reading_after_prefix.len() - k..] {
+            covered_len = k;
+            break;
+        }
+    }
+
+    let kanji_reading: String = reading_after_prefix[..reading_after_prefix.len() - covered_len]
+        .iter()
+        .collect();
+    let covered_oku: String = full_chars[kanji_end..kanji_end + covered_len].iter().collect();
+    let remaining_inflection: String = full_chars[kanji_end + covered_len..].iter().collect();
+
+    // Combine: leading kana + kanji reading (in hiragana) + trailing okurigana + any remaining
+    let full = format!("{}{}{}{}",
+        prefix_kana_hira,
+        kanji_reading,
+        katakana_to_hiragana(&covered_oku),
+        katakana_to_hiragana(&remaining_inflection),
+    );
+    Some(full)
+}
+
 fn format_word_html(word: &ProcToken, enable_furigana: bool) -> String {
     web_sys::console::log_1(&format!(
         "furigana input: full={:?} base={:?} reading={:?}",
@@ -2312,7 +2380,8 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
     let dict_hit = crate::jmdict::lookup_first_result(&word.base, word.pos, is_proper_noun);
 
     // Header: reading, headword + POS pill + verb tags, optional base
-    let reading = dict_hit.as_ref().map(|h| h.kana.as_str());
+    let surface_reading = compute_surface_reading(word);
+    let reading = surface_reading.as_deref();
     html.push_str("<div class='jong-card-header'>");
     if has_kanji(&word.full) {
         if let Some(r) = reading {
