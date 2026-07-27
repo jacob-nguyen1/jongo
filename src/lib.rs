@@ -364,6 +364,36 @@ fn push_verb_badges(html: &mut String, ctx: &RenderContext, word: &ProcToken) {
     }
 }
 
+fn build_inline_def_html(ctx: &RenderContext, word: &ProcToken, selected_def: Option<usize>) -> String {
+    if word.pos == PartOfSpeech::Particle {
+        return String::new();
+    }
+    let is_proper = word.sub1 == PartOfSpeechSubcategory1::ProperNoun;
+    let glosses = crate::jmdict::lookup_all_glosses(&word.base, word.pos, is_proper);
+    let n = glosses.len();
+    if n == 0 {
+        return String::new();
+    }
+    let px = scaled_font_px(ctx.font_size, "detail-xs");
+    match (n, selected_def) {
+        (0, _) => String::new(),
+        (1, _) => format!(
+            " <span class='jong-inline-def' style='font-size:{px}px'>· {}</span>",
+            html_escape(&glosses[0])
+        ),
+        (_, Some(i)) if i < n => format!(
+            " <span class='jong-inline-def' style='font-size:{px}px'>· {}</span>",
+            html_escape(&glosses[i])
+        ),
+        (_, None) => format!(
+            " <span class='jong-inline-def-hint' style='font-size:{px}px'>· {} <span class='jong-inline-def-more'>(+{})</span></span>",
+            html_escape(&glosses[0]),
+            n - 1
+        ),
+        _ => String::new(),
+    }
+}
+
 fn html_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -407,6 +437,7 @@ struct JongoController {
     enabled: bool,
     dark_mode: bool,
     furigana: bool,
+    inline_defs: bool,
     font_size: u32,
     prompt: Option<web_sys::HtmlElement>,
     analyses: Vec<AnalysisWindow>,
@@ -422,6 +453,7 @@ impl JongoController {
             enabled: true,
             dark_mode: false,
             furigana: true,
+            inline_defs: true,
             font_size: DEFAULT_FONT_SIZE,
             prompt: None,
             analyses: Vec::new(),
@@ -469,6 +501,16 @@ impl JongoController {
                 let _ = a.element.remove_attribute("data-jong-furi");
             } else {
                 let _ = a.element.set_attribute("data-jong-furi", "0");
+            }
+        }
+    }
+
+    fn apply_inline_defs_all(&self) {
+        for a in &self.analyses {
+            if self.inline_defs {
+                let _ = a.element.remove_attribute("data-jong-inline-defs");
+            } else {
+                let _ = a.element.set_attribute("data-jong-inline-defs", "0");
             }
         }
     }
@@ -764,6 +806,9 @@ impl JongoController {
         if !self.furigana {
             let _ = element.set_attribute("data-jong-furi", "0");
         }
+        if !self.inline_defs {
+            let _ = element.set_attribute("data-jong-inline-defs", "0");
+        }
         let tokens = grammar::analyze_sentence(sentence);
         let mut chunk_data: Vec<ChunkData> = Vec::new();
         let ctx = RenderContext {
@@ -835,6 +880,10 @@ impl JongoController {
              .jong-word-mod{{font-weight:500;color:#111}}\
              .jong-tree-arm{{font-family:monospace;white-space:pre;color:#666}}\
              .jong-role-badge{{color:#666;border:1px solid #ccc;border-radius:999px;padding:2px 8px}}\
+             .jong-inline-def{{color:#888;font-style:italic;font-weight:400;margin-left:6px}}\
+             .jong-inline-def-hint{{color:#a8a8a8;font-style:italic;margin-left:6px;border-bottom:1px dashed #ccc}}\
+             .jong-inline-def-more{{color:#b0b0b0;font-weight:500;margin-left:2px}}\
+             [data-jong-inline-defs=\"0\"] .jong-inline-def,[data-jong-inline-defs=\"0\"] .jong-inline-def-hint{{display:none}}\
              .ambiguous-badge{{color:#b45309 !important;border-color:#f59e0b !important;background:#fffbeb !important;font-weight:600}}\
              .resolved-badge{{color:#15803d !important;border-color:#22c55e !important;background:#f0fdf4 !important;font-weight:600}}\
              .jong-verb-badge{{color:#0369a1;border:1px solid #0ea5e9;background:#f0f9ff;border-radius:999px;padding:2px 8px;font-weight:600}}\
@@ -907,6 +956,9 @@ impl JongoController {
              [data-jong-dark=\"1\"] .jong-word-mod{{color:{DARK_TEXT_SECONDARY}}}\
              [data-jong-dark=\"1\"] .jong-tree-arm{{color:{DARK_TEXT_DIM}}}\
              [data-jong-dark=\"1\"] .jong-role-badge{{color:{DARK_TEXT_MUTED};border-color:{DARK_BORDER_STRONG}}}\
+             [data-jong-dark=\"1\"] .jong-inline-def{{color:#a8acb8}}\
+             [data-jong-dark=\"1\"] .jong-inline-def-hint{{color:#8a8f9a;border-bottom-color:#4e505c}}\
+             [data-jong-dark=\"1\"] .jong-inline-def-more{{color:#7a7d88}}\
              [data-jong-dark=\"1\"] .jong-def-box{{background:{DARK_SURFACE};border-color:{DARK_BORDER}}}\
              [data-jong-dark=\"1\"] .jong-def-box ol{{color:{DARK_TEXT_SECONDARY}}}\
              [data-jong-dark=\"1\"] .jong-card-reading{{color:{DARK_TEXT_DIM}}}\
@@ -1563,6 +1615,16 @@ pub fn set_furigana(on: bool) {
 }
 
 #[wasm_bindgen]
+pub fn set_inline_defs(on: bool) {
+    CONTROLLER.with(|c| {
+        if let Ok(mut ctrl) = c.try_borrow_mut() {
+            ctrl.inline_defs = on;
+            ctrl.apply_inline_defs_all();
+        }
+    });
+}
+
+#[wasm_bindgen]
 pub fn set_font_size(size: u32) {
     CONTROLLER.with(|c| {
         if let Ok(mut ctrl) = c.try_borrow_mut() {
@@ -1626,9 +1688,26 @@ fn apply_llm_results(container: &web_sys::Element, response: crate::llm::LlmResp
                 }
             } else if dis.disambiguation_type == "vocabulary" {
                 if let Some(def_idx) = dis.result.as_i64() {
-                    // Mutate the ChunkData to store the selected definition
                     if let Some(entry) = cd.get_mut(idx) {
                         entry.selected_def = Some(def_idx as usize);
+
+                        let ctx = render_context_from_controller();
+                        let new_html = build_inline_def_html(&ctx, &entry.word, Some(def_idx as usize));
+                        let row_selector = format!(".jong-row[data-chunk-id='{}']", idx);
+                        if let Ok(Some(row)) = container.query_selector(&row_selector) {
+                            if let Ok(existing) = row.query_selector_all(".jong-inline-def, .jong-inline-def-hint") {
+                                for i in 0..existing.length() {
+                                    if let Some(node) = existing.item(i) {
+                                        if let Some(el) = node.dyn_ref::<web_sys::Element>() {
+                                            el.remove();
+                                        }
+                                    }
+                                }
+                            }
+                            if !new_html.is_empty() {
+                                let _ = row.insert_adjacent_html("beforeend", &new_html);
+                            }
+                        }
                     }
                 }
             } else if dis.disambiguation_type == "clause_relation" {
@@ -2385,6 +2464,7 @@ fn render_row(
         ));
     }
     push_verb_badges(&mut html, ctx, word);
+    html.push_str(&build_inline_def_html(ctx, word, None));
     html.push_str("</div>");
     html
 }
@@ -2437,6 +2517,7 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
 
     let is_proper_noun = word.sub1 == PartOfSpeechSubcategory1::ProperNoun;
     let dict_hit = crate::jmdict::lookup_first_result(&word.base, word.pos, is_proper_noun);
+    let all_glosses = crate::jmdict::lookup_all_glosses(&word.base, word.pos, is_proper_noun);
 
     // Header: reading, headword + POS pill + verb tags, optional base
     let surface_reading = compute_surface_reading(word);
@@ -2482,11 +2563,11 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
 
             let primary = selected_def.unwrap_or(0);
             let is_resolved = selected_def.is_some();
-            let single = hit.glosses.len() == 1;
+            let single = all_glosses.len() == 1;
             let show_selected = is_resolved || single;
 
-            let toggle_html = if is_resolved && hit.glosses.len() > 1 {
-                let hidden_count = hit.glosses.len() - 1;
+            let toggle_html = if is_resolved && all_glosses.len() > 1 {
+                let hidden_count = all_glosses.len() - 1;
                 format!(
                     "<button type='button' class='jong-def-toggle-btn' data-expanded='0' \
                      data-font-tier='detail-xs' style='font-size:{xs_px}px' onclick='\
@@ -2519,7 +2600,7 @@ fn render_detail(ctx: &RenderContext, word: &ProcToken, particle: Option<&ProcTo
 
             html.push_str("<ol class='jong-def-list'>");
 
-            for (i, def) in hit.glosses.iter().enumerate() {
+            for (i, def) in all_glosses.iter().enumerate() {
                 let is_primary = i == primary;
                 let (display, extra_class, opacity) = if is_resolved && !is_primary {
                     ("none", "", "0.5")

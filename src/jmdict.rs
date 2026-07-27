@@ -82,6 +82,13 @@ pub fn lookup_first_result(
     lookup(word, pos, is_proper_noun).into_iter().next()
 }
 
+pub fn lookup_all_glosses(word: &str, pos: crate::labels::PartOfSpeech, is_proper_noun: bool) -> Vec<String> {
+    lookup(word, pos, is_proper_noun)
+        .into_iter()
+        .flat_map(|r| r.glosses)
+        .collect()
+}
+
 /// Check whether a base form is present in the JMdict vocabulary.
 pub fn is_native_verb(word: &str) -> bool {
     !lookup_jmdict(word).is_empty()
