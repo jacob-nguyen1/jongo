@@ -99,7 +99,7 @@ echo "==> Assembling dist/chrome and dist/firefox"
 rm -rf dist/chrome dist/firefox
 mkdir -p dist/chrome/pkg dist/firefox/pkg release
 
-RUNTIME_ROOT=(manifest.json background.js content_shim.js popup.html popup.js)
+RUNTIME_ROOT=(manifest.json background.js content_shim.js popup.html popup.js jongoprototype.png)
 for f in "${RUNTIME_ROOT[@]}"; do
   [[ -f "$f" ]] || die "missing runtime file: $f"
   cp "$f" dist/chrome/
