@@ -6,7 +6,17 @@
   "permissions": ["storage"],
   "action": {
     "default_title": "Jongo (on)",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "jongoprototype.png",
+      "48": "jongoprototype.png",
+      "128": "jongoprototype.png"
+    }
+  },
+  "icons": {
+    "16": "jongoprototype.png",
+    "48": "jongoprototype.png",
+    "128": "jongoprototype.png"
   },
   "background": {
     "service_worker": "background.js"
